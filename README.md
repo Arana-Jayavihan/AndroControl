@@ -38,5 +38,12 @@ Currently the application only support linux environments and mouse controls onl
 + Enter the IP address of the linux system where the server is listening.
 + Enjoy :)
 
+## Functionality
++ Use the Mouse Area to move the cursor arround.
++ You can use the buttons below to simulate button click events.
++ Also you can tap anywhere on the touchpad to send a left click event.
++ You can use two finger swipe to scroll.
+
+
 ## Discliamer
 I will be not responsible for any potential damanges or risks involved with this application so use it at your own risk.
