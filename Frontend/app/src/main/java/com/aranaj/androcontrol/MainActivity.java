@@ -42,6 +42,10 @@ public class MainActivity extends AppCompatActivity {
     private float accumulatedX = 0;
     private float accumulatedY = 0;
     private final Object movementLock = new Object();
+    private boolean isScrolling = false;
+    private float lastScrollY = 0;
+    private static final float SCROLL_THRESHOLD = 5;
+    private static final float SCROLL_SENSITIVITY = 0.5f;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,7 +71,59 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        // inputText.addTextChangedListener(new TextWatcher() {
+        // @Override
+        // public void beforeTextChanged(CharSequence s, int start, int count, int
+        // after) {
+        // }
+        //
+        // @Override
+        // public void onTextChanged(CharSequence s, int start, int before, int count) {
+        // }
+        //
+        // @Override
+        // public void afterTextChanged(Editable s) {
+        // String currentText = s.toString();
+        //
+        // if (!currentText.equals(lastSentText)) {
+        // sendText(currentText);
+        // lastSentText = currentText;
+        // }
+        // }
+        // });
+
         touchPad.setOnTouchListener((v, event) -> {
+            if (event.getPointerCount() == 2) {
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_POINTER_DOWN:
+                    case MotionEvent.ACTION_DOWN:
+                        isScrolling = true;
+                        lastScrollY = event.getY(0); // Use first finger's position
+                        return true;
+
+                    case MotionEvent.ACTION_MOVE:
+                        if (isScrolling) {
+                            float currentY = event.getY(0);
+                            float deltaY = lastScrollY - currentY;
+
+                            if (Math.abs(deltaY) > SCROLL_THRESHOLD) {
+                                // Convert movement to scroll amount
+                                int scrollAmount = (int) (deltaY * SCROLL_SENSITIVITY);
+                                sendScroll(scrollAmount);
+                                lastScrollY = currentY;
+                            }
+                            return true;
+                        }
+                        break;
+
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_POINTER_UP:
+                        isScrolling = false;
+                        return true;
+                }
+                return true;
+            }
+
             switch (event.getAction()) {
                 case MotionEvent.ACTION_DOWN:
                     touchStartTime = System.currentTimeMillis();
@@ -173,6 +229,16 @@ public class MainActivity extends AppCompatActivity {
         if (out != null) {
             executorService.execute(() -> {
                 out.println("C:" + button);
+                out.flush();
+            });
+        }
+    }
+
+    private void sendScroll(int amount) {
+        if (out != null) {
+            executorService.execute(() -> {
+                String message = String.format("S:%d\n", amount);
+                out.print(message);
                 out.flush();
             });
         }
