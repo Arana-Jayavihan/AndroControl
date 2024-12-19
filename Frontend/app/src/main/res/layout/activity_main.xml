@@ -1,24 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:padding="16dp">
-    <!-- Server Configuration -->
-    <EditText
-        android:id="@+id/inputServerIp"
+
+    <!-- Server List -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/serverList"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Enter Server IP"
-        android:inputType="text"
-        android:layout_marginBottom="8dp" />
+        android:layout_height="150dp"
+        android:layout_marginBottom="8dp"/>
+
     <Button
-        android:id="@+id/btnSetServerIp"
+        android:id="@+id/btnAddServer"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Set Server IP"
+        android:text="Add Server"
         android:layout_gravity="center_horizontal"
-        android:layout_marginBottom="16dp" />
+        android:layout_marginBottom="16dp"/>
 
     <!-- Mouse Movement Area -->
     <TextView
@@ -26,14 +27,15 @@
         android:layout_height="wrap_content"
         android:text="Mouse Area"
         android:layout_gravity="center_horizontal"
-        android:padding="8dp" />
+        android:padding="8dp"/>
 
     <View
         android:id="@+id/touchPad"
         android:layout_width="match_parent"
-        android:layout_height="410dp"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:layout_marginBottom="16dp"
-        android:background="#DDDDDD" />
+        android:background="#DDDDDD"/>
 
     <!-- Mouse Click Buttons -->
     <LinearLayout
@@ -41,23 +43,25 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_horizontal">
+
         <Button
             android:id="@+id/btnLeftClick"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Left Click" />
+            android:text="Left Click"/>
+
         <Button
             android:id="@+id/btnMiddleClick"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Middle Click"
-            android:layout_marginStart="16dp" />
+            android:layout_marginStart="16dp"/>
+
         <Button
             android:id="@+id/btnRightClick"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Right Click"
-            android:layout_marginStart="16dp" />
+            android:layout_marginStart="16dp"/>
     </LinearLayout>
-
 </LinearLayout>

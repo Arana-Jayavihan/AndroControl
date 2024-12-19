@@ -1,15 +1,17 @@
 package com.aranaj.androcontrol;
 
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.TextWatcher;
+import androidx.appcompat.app.AlertDialog;
 import android.view.MotionEvent;
 import android.view.View;
+import android.content.Intent;
+import android.widget.TextView;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
-
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.recyclerview.widget.LinearLayoutManager;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.Socket;
@@ -17,10 +19,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
-    private EditText inputServerIp;
-    private EditText inputText;
     private View touchPad;
-    private Button btnSetServerIp, btnLeftClick, btnMiddleClick, btnRightClick;
+    private Button btnLeftClick, btnMiddleClick, btnRightClick;
 
     private String serverIp = "";
     private int serverPort = 5050;
@@ -35,7 +35,6 @@ public class MainActivity extends AppCompatActivity {
     private static final long TAP_THRESHOLD = 200;
     private boolean hasMoved = false;
 
-    private String lastSentText = "";
     private static final int MOVEMENT_BUFFER_MS = 7;
     private static final float MOVEMENT_SENSITIVITY = 1.5f;
     private long lastMovementTime = 0;
@@ -46,29 +45,61 @@ public class MainActivity extends AppCompatActivity {
     private float lastScrollY = 0;
     private static final float SCROLL_THRESHOLD = 5;
     private static final float SCROLL_SENSITIVITY = 0.5f;
+    private ServerManager serverManager;
+    private static final int SERVER_LIST_REQUEST_CODE = 1001;
+    private ServerAdapter serverAdapter;
+    private RecyclerView serverList;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        inputServerIp = findViewById(R.id.inputServerIp);
         touchPad = findViewById(R.id.touchPad);
-        btnSetServerIp = findViewById(R.id.btnSetServerIp);
         btnLeftClick = findViewById(R.id.btnLeftClick);
         btnMiddleClick = findViewById(R.id.btnMiddleClick);
         btnRightClick = findViewById(R.id.btnRightClick);
 
         executorService = Executors.newSingleThreadExecutor();
 
-        btnSetServerIp.setOnClickListener(v -> {
-            serverIp = inputServerIp.getText().toString().trim();
-            if (!serverIp.isEmpty()) {
+        serverManager = new ServerManager(this);
+        serverList = findViewById(R.id.serverList);
+        serverList.setLayoutManager(new LinearLayoutManager(this));
+
+        serverAdapter = new ServerAdapter(serverManager.getServers(), new ServerAdapter.OnServerActionListener() {
+            @Override
+            public void onConnect(int position) {
+                Server server = serverManager.getServers().get(position);
+                serverIp = server.getIpAddress();
+                serverPort = server.getPort();
                 connectToServer();
-            } else {
-                Toast.makeText(this, "Please enter a valid IP", Toast.LENGTH_SHORT).show();
+                server.setConnected(true);
+                serverAdapter.notifyItemChanged(position);
+            }
+
+            @Override
+            public void onDisconnect(int position) {
+                Server server = serverManager.getServers().get(position);
+                disconnectFromServer();
+                server.setConnected(false);
+                serverAdapter.notifyItemChanged(position);
+            }
+
+            @Override
+            public void onEdit(int position) {
+                showEditServerDialog(position);
+            }
+
+            @Override
+            public void onDelete(int position) {
+                serverManager.removeServer(position);
+                serverAdapter.notifyItemRemoved(position);
             }
         });
+
+        serverList.setAdapter(serverAdapter);
+
+        findViewById(R.id.btnAddServer).setOnClickListener(v -> showAddServerDialog());
 
         touchPad.setOnTouchListener((v, event) -> {
             if (event.getPointerCount() == 2) {
@@ -85,7 +116,7 @@ public class MainActivity extends AppCompatActivity {
                             float deltaY = lastScrollY - currentY;
 
                             if (Math.abs(deltaY) > SCROLL_THRESHOLD) {
-                                int scrollAmount = (int) (deltaY * SCROLL_SENSITIVITY);
+                                int scrollAmount = (int)(deltaY * SCROLL_SENSITIVITY);
                                 sendScroll(scrollAmount);
                                 lastScrollY = currentY;
                             }
@@ -158,6 +189,72 @@ public class MainActivity extends AppCompatActivity {
         btnRightClick.setOnClickListener(v -> sendMouseClick("right"));
     }
 
+    private void showAddServerDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_add_server, null);
+
+        EditText nameInput = dialogView.findViewById(R.id.serverNameInput);
+        EditText ipInput = dialogView.findViewById(R.id.serverIpInput);
+        EditText portInput = dialogView.findViewById(R.id.serverPortInput);
+        portInput.setText(String.valueOf(serverPort));
+
+        builder.setView(dialogView)
+                .setTitle("Add Server")
+                .setPositiveButton("Add", (dialog, which) -> {
+                    String name = nameInput.getText().toString();
+                    String ip = ipInput.getText().toString();
+                    int port = Integer.parseInt(portInput.getText().toString());
+
+                    Server server = new Server(name, ip, port);
+                    serverManager.addServer(server);
+                    serverAdapter.notifyItemInserted(serverManager.getServers().size() - 1);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showEditServerDialog(int position) {
+        Server server = serverManager.getServers().get(position);
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_add_server, null);
+
+        EditText nameInput = dialogView.findViewById(R.id.serverNameInput);
+        EditText ipInput = dialogView.findViewById(R.id.serverIpInput);
+        EditText portInput = dialogView.findViewById(R.id.serverPortInput);
+
+        nameInput.setText(server.getName());
+        ipInput.setText(server.getIpAddress());
+        portInput.setText(String.valueOf(server.getPort()));
+
+        builder.setView(dialogView)
+                .setTitle("Edit Server")
+                .setPositiveButton("Save", (dialog, which) -> {
+                    server.setName(nameInput.getText().toString());
+                    server.setIpAddress(ipInput.getText().toString());
+                    server.setPort(Integer.parseInt(portInput.getText().toString()));
+
+                    serverManager.updateServer(position, server);
+                    serverAdapter.notifyItemChanged(position);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void disconnectFromServer() {
+        executorService.execute(() -> {
+            try {
+                if (socket != null && !socket.isClosed()) {
+                    socket.close();
+                    socket = null;
+                    out = null;
+                    runOnUiThread(() -> Toast.makeText(this, "Disconnected from server", Toast.LENGTH_SHORT).show());
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        });
+    }
+
     private void connectToServer() {
         executorService.execute(() -> {
             try {
@@ -179,7 +276,7 @@ public class MainActivity extends AppCompatActivity {
     private void sendAccumulatedMovement() {
         synchronized (movementLock) {
             if (accumulatedX != 0 || accumulatedY != 0) {
-                sendMouseMovement((int) accumulatedX, (int) accumulatedY);
+                sendMouseMovement((int)accumulatedX, (int)accumulatedY);
                 accumulatedX = 0;
                 accumulatedY = 0;
             }
@@ -189,8 +286,9 @@ public class MainActivity extends AppCompatActivity {
     private void sendMouseMovement(int deltaX, int deltaY) {
         if (out != null) {
             executorService.execute(() -> {
-                int adjustedX = (int) (deltaX * MOVEMENT_SENSITIVITY);
-                int adjustedY = (int) (deltaY * MOVEMENT_SENSITIVITY);
+                // Apply sensitivity multiplier
+                int adjustedX = (int)(deltaX * MOVEMENT_SENSITIVITY);
+                int adjustedY = (int)(deltaY * MOVEMENT_SENSITIVITY);
 
                 String message = String.format("M:%d,%d\n", adjustedX, adjustedY);
                 out.print(message);
