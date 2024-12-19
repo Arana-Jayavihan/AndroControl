@@ -1,0 +1,70 @@
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+    <!-- Server Configuration -->
+    <EditText
+        android:id="@+id/inputServerIp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter Server IP"
+        android:inputType="text"
+        android:layout_marginBottom="8dp" />
+    <Button
+        android:id="@+id/btnSetServerIp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Set Server IP"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Mouse Movement Area -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Mouse Area"
+        android:layout_gravity="center_horizontal"
+        android:padding="8dp" />
+
+    <View
+        android:id="@+id/touchPad"
+        android:layout_width="match_parent"
+        android:layout_height="410dp"
+        android:layout_marginBottom="16dp"
+        android:background="#DDDDDD" />
+
+    <!-- Mouse Click Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_horizontal">
+        <Button
+            android:id="@+id/btnLeftClick"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Left Click" />
+        <Button
+            android:id="@+id/btnMiddleClick"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Middle Click"
+            android:layout_marginStart="16dp" />
+        <Button
+            android:id="@+id/btnRightClick"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Right Click"
+            android:layout_marginStart="16dp" />
+    </LinearLayout>
+
+    <!-- Text Input -->
+    <EditText
+        android:id="@+id/inputKey"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Type to send text in real-time"
+        android:layout_marginTop="16dp" />
+</LinearLayout>
