@@ -14,10 +14,10 @@ appropriate commands through python-uinput library.
 Currently the application only support linux environments and mouse controls only.
 
 ## TODOs
-+ Implement proper keyboard controls.
-+ Functionality to remember servers on frontend.
-+ Implementing an authentication mechanism.
-+ Adding TLS to secure the socket communication.
++ Functionality to remember servers on frontend.          Done ✅
++ Implement proper keyboard controls.                     Pending ⏳
++ Implementing an authentication mechanism.               Pending ⏳
++ Adding TLS to secure the socket communication.          Pending ⏳
 
 ## How To Install
 ### Prerequisities
@@ -39,6 +39,7 @@ Currently the application only support linux environments and mouse controls onl
 + Enjoy :)
 
 ## Functionality
++ Save your Server Details.
 + Use the Mouse Area to move the cursor arround.
 + You can use the buttons below to simulate button click events.
 + Also you can tap anywhere on the touchpad to send a left click event.
