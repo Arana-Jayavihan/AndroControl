@@ -44,6 +44,8 @@ Currently the application only support linux environments and mouse controls onl
 + Also you can tap anywhere on the touchpad to send a left click event.
 + You can use two finger swipe to scroll.
 
+## Screenshots
+![UI](https://github.com/Arana-Jayavihan/AndroControl/blob/master/assets/UI.png?raw=true)
 
 ## Discliamer
 I will be not responsible for any potential damanges or risks involved with this application so use it at your own risk.
