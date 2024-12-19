@@ -53,7 +53,6 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         inputServerIp = findViewById(R.id.inputServerIp);
-        // inputText = findViewById(R.id.inputKey);
         touchPad = findViewById(R.id.touchPad);
         btnSetServerIp = findViewById(R.id.btnSetServerIp);
         btnLeftClick = findViewById(R.id.btnLeftClick);
@@ -71,34 +70,13 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // inputText.addTextChangedListener(new TextWatcher() {
-        // @Override
-        // public void beforeTextChanged(CharSequence s, int start, int count, int
-        // after) {
-        // }
-        //
-        // @Override
-        // public void onTextChanged(CharSequence s, int start, int before, int count) {
-        // }
-        //
-        // @Override
-        // public void afterTextChanged(Editable s) {
-        // String currentText = s.toString();
-        //
-        // if (!currentText.equals(lastSentText)) {
-        // sendText(currentText);
-        // lastSentText = currentText;
-        // }
-        // }
-        // });
-
         touchPad.setOnTouchListener((v, event) -> {
             if (event.getPointerCount() == 2) {
                 switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_POINTER_DOWN:
                     case MotionEvent.ACTION_DOWN:
                         isScrolling = true;
-                        lastScrollY = event.getY(0); // Use first finger's position
+                        lastScrollY = event.getY(0);
                         return true;
 
                     case MotionEvent.ACTION_MOVE:
@@ -107,7 +85,6 @@ public class MainActivity extends AppCompatActivity {
                             float deltaY = lastScrollY - currentY;
 
                             if (Math.abs(deltaY) > SCROLL_THRESHOLD) {
-                                // Convert movement to scroll amount
                                 int scrollAmount = (int) (deltaY * SCROLL_SENSITIVITY);
                                 sendScroll(scrollAmount);
                                 lastScrollY = currentY;
@@ -160,10 +137,8 @@ public class MainActivity extends AppCompatActivity {
                     return true;
 
                 case MotionEvent.ACTION_UP:
-                    // Send any remaining accumulated movement
                     sendAccumulatedMovement();
 
-                    // Handle tap
                     long touchDuration = System.currentTimeMillis() - touchStartTime;
                     if (!hasMoved && touchDuration < TAP_THRESHOLD) {
                         sendMouseClick("left");
@@ -214,7 +189,6 @@ public class MainActivity extends AppCompatActivity {
     private void sendMouseMovement(int deltaX, int deltaY) {
         if (out != null) {
             executorService.execute(() -> {
-                // Apply sensitivity multiplier
                 int adjustedX = (int) (deltaX * MOVEMENT_SENSITIVITY);
                 int adjustedY = (int) (deltaY * MOVEMENT_SENSITIVITY);
 
