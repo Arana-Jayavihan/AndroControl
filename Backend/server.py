@@ -9,7 +9,7 @@ PORT = 5050
 # Create uinput device
 device = uinput.Device([
     uinput.REL_X, uinput.REL_Y,
-    uinput.BTN_LEFT, uinput.BTN_RIGHT, uinput.BTN_MIDDLE,
+    uinput.BTN_LEFT, uinput.BTN_RIGHT, uinput.BTN_MIDDLE,uinput.REL_WHEEL,
     uinput.KEY_A, uinput.KEY_B, uinput.KEY_C, uinput.KEY_D, uinput.KEY_E,
     uinput.KEY_F, uinput.KEY_G, uinput.KEY_H, uinput.KEY_I, uinput.KEY_J,
     uinput.KEY_K, uinput.KEY_L, uinput.KEY_M, uinput.KEY_N, uinput.KEY_O,
@@ -66,6 +66,10 @@ def handle_client(client_socket):
                     elif button == 'middle':
                         device.emit(uinput.BTN_MIDDLE, 1)
                         device.emit(uinput.BTN_MIDDLE, 0)
+
+                elif data.startswith('S:'):
+                    amount = int(data[2:].strip()) * -1
+                    device.emit(uinput.REL_WHEEL, amount)
 
                 elif data.startswith('T:'):
                     text = data.split(':', 1)[1]
