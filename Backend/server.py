@@ -3,45 +3,36 @@ import uinput
 import threading
 import time
 
-# Define the server settings
-HOST = '0.0.0.0'  # Listen on all interfaces
-PORT = 5000       # Port to listen on
+HOST = '0.0.0.0'
+PORT = 5000
 
 # Create uinput device
 device = uinput.Device([
-    # Mouse events
     uinput.REL_X, uinput.REL_Y,
     uinput.BTN_LEFT, uinput.BTN_RIGHT, uinput.BTN_MIDDLE,
-
-    # Keyboard events (include most common keys)
     uinput.KEY_A, uinput.KEY_B, uinput.KEY_C, uinput.KEY_D, uinput.KEY_E,
     uinput.KEY_F, uinput.KEY_G, uinput.KEY_H, uinput.KEY_I, uinput.KEY_J,
     uinput.KEY_K, uinput.KEY_L, uinput.KEY_M, uinput.KEY_N, uinput.KEY_O,
     uinput.KEY_P, uinput.KEY_Q, uinput.KEY_R, uinput.KEY_S, uinput.KEY_T,
     uinput.KEY_U, uinput.KEY_V, uinput.KEY_W, uinput.KEY_X, uinput.KEY_Y,
     uinput.KEY_Z, uinput.KEY_SPACE, uinput.KEY_BACKSPACE, uinput.KEY_ENTER,
-
-    # Add more special keys as needed
     uinput.KEY_LEFTSHIFT, uinput.KEY_RIGHTSHIFT,
     uinput.KEY_LEFTCTRL, uinput.KEY_RIGHTCTRL
 ])
 
 def send_key_sequence(text):
-    """Send a sequence of key presses"""
     for char in text:
         try:
-            # Handle special cases
             if char == ' ':
                 key_event = uinput.KEY_SPACE
             elif char == '\n':
                 key_event = uinput.KEY_ENTER
             else:
-                # Convert to uppercase key event
                 key_event = getattr(uinput, f'KEY_{char.upper()}', None)
 
             if key_event:
                 device.emit_click(key_event)
-                time.sleep(0.05)  # Small delay between keystrokes
+                time.sleep(0.05)
         except Exception as e:
             print(f"Error sending key for '{char}': {e}")
 
@@ -49,14 +40,12 @@ def handle_client(client_socket):
     """Handle incoming messages from the client."""
     try:
         while True:
-            # Receive data from the client
             data = client_socket.recv(1024).decode('utf-8').strip()
             if not data:
                 break
 
-            # Parse the received data
             try:
-                if data.startswith('M:'):  # Mouse movement
+                if data.startswith('M:'):
                     parts = data.split(':')[1].split(',')
                     if len(parts) == 2:
                         x, y = map(int, parts)
@@ -66,7 +55,7 @@ def handle_client(client_socket):
                         except Exception as error:
                             print(error)
 
-                elif data.startswith('C:'):  # Mouse click
+                elif data.startswith('C:'):
                     button = data.split(':')[1]
                     if button == 'left':
                         device.emit(uinput.BTN_LEFT, 1)
@@ -78,7 +67,7 @@ def handle_client(client_socket):
                         device.emit(uinput.BTN_MIDDLE, 1)
                         device.emit(uinput.BTN_MIDDLE, 0)
 
-                elif data.startswith('T:'):  # Text input
+                elif data.startswith('T:'):
                     text = data.split(':', 1)[1]
                     send_key_sequence(text)
 
