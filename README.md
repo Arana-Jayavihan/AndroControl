@@ -45,7 +45,7 @@ Currently the application only support linux environments and mouse controls onl
 + You can use two finger swipe to scroll.
 
 ## Screenshots
-![preview1](https://github.com/Arana-Jayavihan/AndroControl/blob/master/assets/UI.png?raw=true)
+![preview1](https://github.com/Arana-Jayavihan/AndroControl/blob/main/Assets/UI.png?raw=true)
 
 ## Discliamer
 I will be not responsible for any potential damanges or risks involved with this application so use it at your own risk.
