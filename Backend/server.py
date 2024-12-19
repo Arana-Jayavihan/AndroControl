@@ -37,7 +37,6 @@ def send_key_sequence(text):
             print(f"Error sending key for '{char}': {e}")
 
 def handle_client(client_socket):
-    """Handle incoming messages from the client."""
     try:
         while True:
             data = client_socket.recv(1024).decode('utf-8').strip()
@@ -84,7 +83,6 @@ def handle_client(client_socket):
         client_socket.close()
 
 def start_server():
-    """Start the socket server."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
         server.bind((HOST, PORT))
         server.listen()
@@ -92,7 +90,6 @@ def start_server():
         while True:
             client_socket, addr = server.accept()
             print(f"Connection established with {addr}")
-            # Handle each client in a separate thread
             client_thread = threading.Thread(target=handle_client, args=(client_socket,))
             client_thread.start()
 
