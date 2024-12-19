@@ -23,7 +23,7 @@ public class MainActivity extends AppCompatActivity {
     private Button btnSetServerIp, btnLeftClick, btnMiddleClick, btnRightClick;
 
     private String serverIp = "";
-    private int serverPort = 5000;
+    private int serverPort = 5050;
     private Socket socket;
     private PrintWriter out;
     private ExecutorService executorService;
@@ -36,6 +36,12 @@ public class MainActivity extends AppCompatActivity {
     private boolean hasMoved = false;
 
     private String lastSentText = "";
+    private static final int MOVEMENT_BUFFER_MS = 7;
+    private static final float MOVEMENT_SENSITIVITY = 1.5f;
+    private long lastMovementTime = 0;
+    private float accumulatedX = 0;
+    private float accumulatedY = 0;
+    private final Object movementLock = new Object();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -68,6 +74,10 @@ public class MainActivity extends AppCompatActivity {
                     lastX = event.getX();
                     lastY = event.getY();
                     hasMoved = false;
+                    synchronized (movementLock) {
+                        accumulatedX = 0;
+                        accumulatedY = 0;
+                    }
                     return true;
 
                 case MotionEvent.ACTION_MOVE:
@@ -76,7 +86,17 @@ public class MainActivity extends AppCompatActivity {
 
                     if (Math.abs(deltaX) > MOVEMENT_THRESHOLD || Math.abs(deltaY) > MOVEMENT_THRESHOLD) {
                         hasMoved = true;
-                        sendMouseMovement((int) deltaX, (int) deltaY);
+
+                        synchronized (movementLock) {
+                            accumulatedX += deltaX;
+                            accumulatedY += deltaY;
+                        }
+
+                        long currentTime = System.currentTimeMillis();
+                        if (currentTime - lastMovementTime >= MOVEMENT_BUFFER_MS) {
+                            sendAccumulatedMovement();
+                            lastMovementTime = currentTime;
+                        }
 
                         lastX = event.getX();
                         lastY = event.getY();
@@ -84,6 +104,10 @@ public class MainActivity extends AppCompatActivity {
                     return true;
 
                 case MotionEvent.ACTION_UP:
+                    // Send any remaining accumulated movement
+                    sendAccumulatedMovement();
+
+                    // Handle tap
                     long touchDuration = System.currentTimeMillis() - touchStartTime;
                     if (!hasMoved && touchDuration < TAP_THRESHOLD) {
                         sendMouseClick("left");
@@ -121,10 +145,25 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private void sendAccumulatedMovement() {
+        synchronized (movementLock) {
+            if (accumulatedX != 0 || accumulatedY != 0) {
+                sendMouseMovement((int) accumulatedX, (int) accumulatedY);
+                accumulatedX = 0;
+                accumulatedY = 0;
+            }
+        }
+    }
+
     private void sendMouseMovement(int deltaX, int deltaY) {
         if (out != null) {
             executorService.execute(() -> {
-                out.println("M:" + deltaX + "," + deltaY);
+                // Apply sensitivity multiplier
+                int adjustedX = (int) (deltaX * MOVEMENT_SENSITIVITY);
+                int adjustedY = (int) (deltaY * MOVEMENT_SENSITIVITY);
+
+                String message = String.format("M:%d,%d\n", adjustedX, adjustedY);
+                out.print(message);
                 out.flush();
             });
         }

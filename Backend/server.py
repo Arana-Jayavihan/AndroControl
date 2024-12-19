@@ -4,7 +4,7 @@ import threading
 import time
 
 HOST = '0.0.0.0'
-PORT = 5000
+PORT = 5050
 
 # Create uinput device
 device = uinput.Device([
@@ -47,7 +47,8 @@ def handle_client(client_socket):
                 if data.startswith('M:'):
                     parts = data.split(':')[1].split(',')
                     if len(parts) == 2:
-                        x, y = map(int, parts)
+                        x = int(parts[0])
+                        y = int(parts[1].split('\\')[0])
                         try:
                             device.emit(uinput.REL_X, x, syn=False)
                             device.emit(uinput.REL_Y, y)
@@ -74,7 +75,7 @@ def handle_client(client_socket):
                     print(f"Unknown command: {data}")
 
             except Exception as e:
-                print(f"Error processing command: {e}")
+                pass
 
     except Exception as ex:
         print(f"Client connection error: {ex}")

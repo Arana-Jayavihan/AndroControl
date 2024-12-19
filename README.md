@@ -24,7 +24,7 @@ Currently the application only support linux environments and mouse controls onl
 + Make sure that you have the "uinput" kernel module installed with "sudo modprobe -i uinput".
 + To load uinput module on system boot add it to "/etc/modules".
 + To verify the module installation run "lsmod | grep uinput", this should output something like "uinput                 20480  1".
-+ Both the target linux system and the smartphone must be in the same local area network and firewall must allow TCP traffic via port 5000.
++ Both the target linux system and the smartphone must be in the same local area network and firewall must allow TCP traffic via port 5050.
 
 ### Setting up the Listner
 + Download the server.py and move it to your desired location.

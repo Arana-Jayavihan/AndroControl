@@ -60,11 +60,4 @@
             android:layout_marginStart="16dp" />
     </LinearLayout>
 
-    <!-- Text Input -->
-    <EditText
-        android:id="@+id/inputKey"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Type to send text in real-time"
-        android:layout_marginTop="16dp" />
 </LinearLayout>
