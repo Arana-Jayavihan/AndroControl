@@ -29,7 +29,11 @@ public class MainActivity extends AppCompatActivity {
     private ExecutorService executorService;
 
     private float lastX = 0, lastY = 0;
-    private static final int MOVEMENT_THRESHOLD = 3;
+    private static final int MOVEMENT_THRESHOLD = 5;
+
+    private long touchStartTime;
+    private static final long TAP_THRESHOLD = 200;
+    private boolean hasMoved = false;
 
     private String lastSentText = "";
 
@@ -39,7 +43,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         inputServerIp = findViewById(R.id.inputServerIp);
-        inputText = findViewById(R.id.inputKey);
+        // inputText = findViewById(R.id.inputKey);
         touchPad = findViewById(R.id.touchPad);
         btnSetServerIp = findViewById(R.id.btnSetServerIp);
         btnLeftClick = findViewById(R.id.btnLeftClick);
@@ -57,32 +61,13 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        inputText.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-            }
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-            }
-
-            @Override
-            public void afterTextChanged(Editable s) {
-                String currentText = s.toString();
-
-                if (!currentText.equals(lastSentText)) {
-                    sendText(currentText);
-                    lastSentText = currentText;
-                }
-            }
-        });
-
         touchPad.setOnTouchListener((v, event) -> {
             switch (event.getAction()) {
                 case MotionEvent.ACTION_DOWN:
+                    touchStartTime = System.currentTimeMillis();
                     lastX = event.getX();
                     lastY = event.getY();
-                    sendMouseClick("left");
+                    hasMoved = false;
                     return true;
 
                 case MotionEvent.ACTION_MOVE:
@@ -90,6 +75,7 @@ public class MainActivity extends AppCompatActivity {
                     float deltaY = event.getY() - lastY;
 
                     if (Math.abs(deltaX) > MOVEMENT_THRESHOLD || Math.abs(deltaY) > MOVEMENT_THRESHOLD) {
+                        hasMoved = true;
                         sendMouseMovement((int) deltaX, (int) deltaY);
 
                         lastX = event.getX();
@@ -98,8 +84,15 @@ public class MainActivity extends AppCompatActivity {
                     return true;
 
                 case MotionEvent.ACTION_UP:
+                    long touchDuration = System.currentTimeMillis() - touchStartTime;
+                    if (!hasMoved && touchDuration < TAP_THRESHOLD) {
+                        sendMouseClick("left");
+                        touchPad.performClick();
+                    }
+
                     lastX = 0;
                     lastY = 0;
+                    hasMoved = false;
                     return true;
             }
             return false;
