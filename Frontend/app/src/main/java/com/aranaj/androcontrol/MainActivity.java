@@ -49,6 +49,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int SERVER_LIST_REQUEST_CODE = 1001;
     private ServerAdapter serverAdapter;
     private RecyclerView serverList;
+    private Server currentServer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,19 +71,12 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onConnect(int position) {
                 Server server = serverManager.getServers().get(position);
-                serverIp = server.getIpAddress();
-                serverPort = server.getPort();
-                connectToServer();
-                server.setConnected(true);
-                serverAdapter.notifyItemChanged(position);
+                connectToServer(server);
             }
 
             @Override
             public void onDisconnect(int position) {
-                Server server = serverManager.getServers().get(position);
                 disconnectFromServer();
-                server.setConnected(false);
-                serverAdapter.notifyItemChanged(position);
             }
 
             @Override
@@ -96,6 +90,11 @@ public class MainActivity extends AppCompatActivity {
                 serverAdapter.notifyItemRemoved(position);
             }
         });
+
+        Server lastConnectedServer = serverManager.getLastConnectedServer();
+        if (lastConnectedServer != null) {
+            connectToServer(lastConnectedServer);
+        }
 
         serverList.setAdapter(serverAdapter);
 
@@ -247,7 +246,16 @@ public class MainActivity extends AppCompatActivity {
                     socket.close();
                     socket = null;
                     out = null;
-                    runOnUiThread(() -> Toast.makeText(this, "Disconnected from server", Toast.LENGTH_SHORT).show());
+
+                    runOnUiThread(() -> {
+                        if (currentServer != null) {
+                            currentServer.setConnected(false);
+                            currentServer = null;
+                            serverManager.clearLastConnectedServer();
+                            serverAdapter.notifyDataSetChanged();
+                        }
+                        Toast.makeText(this, "Disconnected from server", Toast.LENGTH_SHORT).show();
+                    });
                 }
             } catch (IOException e) {
                 e.printStackTrace();
@@ -255,7 +263,11 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void connectToServer() {
+    private void connectToServer(Server server) {
+        currentServer = server;
+        serverIp = server.getIpAddress();
+        serverPort = server.getPort();
+
         executorService.execute(() -> {
             try {
                 if (socket != null && !socket.isClosed()) {
@@ -265,10 +277,18 @@ public class MainActivity extends AppCompatActivity {
                 socket = new Socket(serverIp, serverPort);
                 out = new PrintWriter(socket.getOutputStream(), true);
 
-                runOnUiThread(() -> Toast.makeText(this, "Connected to server", Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Connected to " + server.getName(), Toast.LENGTH_SHORT).show();
+                    server.setConnected(true);
+                    serverManager.setLastConnectedServer(server.getId());
+                    serverAdapter.notifyDataSetChanged();
+                });
             } catch (IOException e) {
-                runOnUiThread(
-                        () -> Toast.makeText(this, "Connection failed: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Connection failed: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    server.setConnected(false);
+                    serverAdapter.notifyDataSetChanged();
+                });
             }
         });
     }
@@ -326,14 +346,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (currentServer != null && (socket == null || socket.isClosed())) {
+            connectToServer(currentServer);
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
-        try {
-            if (socket != null)
-                socket.close();
-            executorService.shutdown();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        disconnectFromServer();
+        executorService.shutdown();
     }
 }

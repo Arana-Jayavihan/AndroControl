@@ -11,6 +11,7 @@ import java.util.List;
 public class ServerManager {
     private static final String PREFS_NAME = "ServerPrefs";
     private static final String SERVERS_KEY = "servers";
+    private static final String LAST_CONNECTED_SERVER_KEY = "last_connected_server";
     private final SharedPreferences prefs;
     private final Gson gson;
     private List<Server> servers;
@@ -48,5 +49,24 @@ public class ServerManager {
     private void saveServers() {
         String serversJson = gson.toJson(servers);
         prefs.edit().putString(SERVERS_KEY, serversJson).apply();
+    }
+    public void setLastConnectedServer(String serverId) {
+        prefs.edit().putString(LAST_CONNECTED_SERVER_KEY, serverId).apply();
+    }
+
+    public Server getLastConnectedServer() {
+        String lastConnectedId = prefs.getString(LAST_CONNECTED_SERVER_KEY, null);
+        if (lastConnectedId != null) {
+            for (Server server : servers) {
+                if (lastConnectedId.equals(server.getId())) {
+                    return server;
+                }
+            }
+        }
+        return null;
+    }
+
+    public void clearLastConnectedServer() {
+        prefs.edit().remove(LAST_CONNECTED_SERVER_KEY).apply();
     }
 }
