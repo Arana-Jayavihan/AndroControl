@@ -306,7 +306,6 @@ public class MainActivity extends AppCompatActivity {
     private void sendMouseMovement(int deltaX, int deltaY) {
         if (out != null) {
             executorService.execute(() -> {
-                // Apply sensitivity multiplier
                 int adjustedX = (int)(deltaX * MOVEMENT_SENSITIVITY);
                 int adjustedY = (int)(deltaY * MOVEMENT_SENSITIVITY);
 

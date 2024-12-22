@@ -9,7 +9,7 @@ public class Server {
     private boolean isConnected;
 
     public Server(String name, String ipAddress, int port) {
-        this.id = UUID.randomUUID().toString();  // Generate unique ID
+        this.id = UUID.randomUUID().toString();
         this.name = name;
         this.ipAddress = ipAddress;
         this.port = port;
