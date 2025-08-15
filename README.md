@@ -15,9 +15,9 @@ Currently the application only support linux environments and mouse controls onl
 
 ## TODOs
 + Functionality to remember servers on frontend.          Done ✅
-+ Implement proper keyboard controls.                     Pending ⏳
-+ Implementing an authentication mechanism.               Pending ⏳
-+ Adding TLS to secure the socket communication.          Pending ⏳
++ Implement proper keyboard controls.                     Done ✅
++ Implementing an authentication mechanism.               Discarded
++ Adding TLS to secure the socket communication.          Discarded
 
 ## How To Install
 ### Prerequisities
