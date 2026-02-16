@@ -7,6 +7,7 @@ public class Server {
     private String ipAddress;
     private int port;
     private boolean isConnected;
+    private transient String authToken; // Not serialized, stored separately in SecureStorage
 
     public Server(String name, String ipAddress, int port) {
         this.id = UUID.randomUUID().toString();
@@ -14,6 +15,12 @@ public class Server {
         this.ipAddress = ipAddress;
         this.port = port;
         this.isConnected = false;
+        this.authToken = null;
+    }
+
+    public Server(String name, String ipAddress, int port, String authToken) {
+        this(name, ipAddress, port);
+        this.authToken = authToken;
     }
 
     public String getName() { return name; }
@@ -25,4 +32,7 @@ public class Server {
     public boolean isConnected() { return isConnected; }
     public void setConnected(boolean connected) { isConnected = connected; }
     public String getId() { return id; }
+    public String getAuthToken() { return authToken; }
+    public void setAuthToken(String authToken) { this.authToken = authToken; }
+    public boolean hasAuthToken() { return authToken != null && !authToken.isEmpty(); }
 }

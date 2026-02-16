@@ -1,32 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:layout_height="wrap_content">
 
-    <EditText
-        android:id="@+id/serverNameInput"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Server Name"
-        android:inputType="text"
-        android:layout_marginBottom="8dp"/>
+        android:orientation="vertical"
+        android:padding="16dp">
 
-    <EditText
-        android:id="@+id/serverIpInput"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Server IP Address"
-        android:inputType="text"
-        android:layout_marginBottom="8dp"/>
+        <EditText
+            android:id="@+id/serverNameInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Server Name"
+            android:inputType="text"
+            android:layout_marginBottom="12dp"/>
 
-    <EditText
-        android:id="@+id/serverPortInput"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Port Number"
-        android:inputType="number"
-        android:layout_marginBottom="8dp"/>
-</LinearLayout>
+        <EditText
+            android:id="@+id/serverIpInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Server IP Address"
+            android:inputType="text"
+            android:layout_marginBottom="12dp"/>
+
+        <EditText
+            android:id="@+id/serverPortInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Port Number"
+            android:inputType="number"
+            android:layout_marginBottom="12dp"/>
+
+        <EditText
+            android:id="@+id/serverTokenInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Authentication Token"
+            android:inputType="textPassword"
+            android:layout_marginBottom="8dp"/>
+
+    </LinearLayout>
+</ScrollView>

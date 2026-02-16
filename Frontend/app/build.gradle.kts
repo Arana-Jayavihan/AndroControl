@@ -46,4 +46,6 @@ dependencies {
     implementation("androidx.recyclerview:recyclerview:1.2.1")
     implementation("androidx.cardview:cardview:1.0.0")
 
+    // Security - for encrypted storage (optional, uses Android Keystore directly)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }
