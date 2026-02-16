@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -56,143 +57,86 @@ func init() {
 	tlsConfig = NewTLSConfig()
 }
 
+// CharMapping holds the key and whether shift is needed
+type CharMapping struct {
+	Key       int
+	NeedShift bool
+}
+
+// charToKey maps characters to their uinput key codes (US keyboard layout)
+var charToKey = map[rune]CharMapping{
+	// Lowercase letters
+	'a': {uinput.KeyA, false}, 'b': {uinput.KeyB, false}, 'c': {uinput.KeyC, false},
+	'd': {uinput.KeyD, false}, 'e': {uinput.KeyE, false}, 'f': {uinput.KeyF, false},
+	'g': {uinput.KeyG, false}, 'h': {uinput.KeyH, false}, 'i': {uinput.KeyI, false},
+	'j': {uinput.KeyJ, false}, 'k': {uinput.KeyK, false}, 'l': {uinput.KeyL, false},
+	'm': {uinput.KeyM, false}, 'n': {uinput.KeyN, false}, 'o': {uinput.KeyO, false},
+	'p': {uinput.KeyP, false}, 'q': {uinput.KeyQ, false}, 'r': {uinput.KeyR, false},
+	's': {uinput.KeyS, false}, 't': {uinput.KeyT, false}, 'u': {uinput.KeyU, false},
+	'v': {uinput.KeyV, false}, 'w': {uinput.KeyW, false}, 'x': {uinput.KeyX, false},
+	'y': {uinput.KeyY, false}, 'z': {uinput.KeyZ, false},
+
+	// Uppercase letters (need shift)
+	'A': {uinput.KeyA, true}, 'B': {uinput.KeyB, true}, 'C': {uinput.KeyC, true},
+	'D': {uinput.KeyD, true}, 'E': {uinput.KeyE, true}, 'F': {uinput.KeyF, true},
+	'G': {uinput.KeyG, true}, 'H': {uinput.KeyH, true}, 'I': {uinput.KeyI, true},
+	'J': {uinput.KeyJ, true}, 'K': {uinput.KeyK, true}, 'L': {uinput.KeyL, true},
+	'M': {uinput.KeyM, true}, 'N': {uinput.KeyN, true}, 'O': {uinput.KeyO, true},
+	'P': {uinput.KeyP, true}, 'Q': {uinput.KeyQ, true}, 'R': {uinput.KeyR, true},
+	'S': {uinput.KeyS, true}, 'T': {uinput.KeyT, true}, 'U': {uinput.KeyU, true},
+	'V': {uinput.KeyV, true}, 'W': {uinput.KeyW, true}, 'X': {uinput.KeyX, true},
+	'Y': {uinput.KeyY, true}, 'Z': {uinput.KeyZ, true},
+
+	// Numbers
+	'0': {uinput.Key0, false}, '1': {uinput.Key1, false}, '2': {uinput.Key2, false},
+	'3': {uinput.Key3, false}, '4': {uinput.Key4, false}, '5': {uinput.Key5, false},
+	'6': {uinput.Key6, false}, '7': {uinput.Key7, false}, '8': {uinput.Key8, false},
+	'9': {uinput.Key9, false},
+
+	// Shift + Numbers (symbols)
+	'!': {uinput.Key1, true}, '@': {uinput.Key2, true}, '#': {uinput.Key3, true},
+	'$': {uinput.Key4, true}, '%': {uinput.Key5, true}, '^': {uinput.Key6, true},
+	'&': {uinput.Key7, true}, '*': {uinput.Key8, true}, '(': {uinput.Key9, true},
+	')': {uinput.Key0, true},
+
+	// Special characters
+	' ':  {uinput.KeySpace, false},
+	'\n': {uinput.KeyEnter, false},
+	'\t': {uinput.KeyTab, false},
+
+	// Punctuation (no shift)
+	'`':  {uinput.KeyGrave, false},
+	'-':  {uinput.KeyMinus, false},
+	'=':  {uinput.KeyEqual, false},
+	'[':  {uinput.KeyLeftbrace, false},
+	']':  {uinput.KeyRightbrace, false},
+	'\\': {uinput.KeyBackslash, false},
+	';':  {uinput.KeySemicolon, false},
+	'\'': {uinput.KeyApostrophe, false},
+	',':  {uinput.KeyComma, false},
+	'.':  {uinput.KeyDot, false},
+	'/':  {uinput.KeySlash, false},
+
+	// Punctuation (with shift)
+	'~': {uinput.KeyGrave, true},
+	'_': {uinput.KeyMinus, true},
+	'+': {uinput.KeyEqual, true},
+	'{': {uinput.KeyLeftbrace, true},
+	'}': {uinput.KeyRightbrace, true},
+	'|': {uinput.KeyBackslash, true},
+	':': {uinput.KeySemicolon, true},
+	'"': {uinput.KeyApostrophe, true},
+	'<': {uinput.KeyComma, true},
+	'>': {uinput.KeyDot, true},
+	'?': {uinput.KeySlash, true},
+}
+
 func asciiToUinput(ascii int) (int, error) {
-	switch ascii {
-	case 97:
-		return uinput.KeyA, nil
-	case 98:
-		return uinput.KeyB, nil
-	case 99:
-		return uinput.KeyC, nil
-	case 100:
-		return uinput.KeyD, nil
-	case 101:
-		return uinput.KeyE, nil
-	case 102:
-		return uinput.KeyF, nil
-	case 103:
-		return uinput.KeyG, nil
-	case 104:
-		return uinput.KeyH, nil
-	case 105:
-		return uinput.KeyI, nil
-	case 106:
-		return uinput.KeyJ, nil
-	case 107:
-		return uinput.KeyK, nil
-	case 108:
-		return uinput.KeyL, nil
-	case 109:
-		return uinput.KeyM, nil
-	case 110:
-		return uinput.KeyN, nil
-	case 111:
-		return uinput.KeyO, nil
-	case 112:
-		return uinput.KeyP, nil
-	case 113:
-		return uinput.KeyQ, nil
-	case 114:
-		return uinput.KeyR, nil
-	case 115:
-		return uinput.KeyS, nil
-	case 116:
-		return uinput.KeyT, nil
-	case 117:
-		return uinput.KeyU, nil
-	case 118:
-		return uinput.KeyV, nil
-	case 119:
-		return uinput.KeyW, nil
-	case 120:
-		return uinput.KeyX, nil
-	case 121:
-		return uinput.KeyY, nil
-	case 122:
-		return uinput.KeyZ, nil
-
-	case 65:
-		return uinput.KeyA, nil
-	case 66:
-		return uinput.KeyB, nil
-	case 67:
-		return uinput.KeyC, nil
-	case 68:
-		return uinput.KeyD, nil
-	case 69:
-		return uinput.KeyE, nil
-	case 70:
-		return uinput.KeyF, nil
-	case 71:
-		return uinput.KeyG, nil
-	case 72:
-		return uinput.KeyH, nil
-	case 73:
-		return uinput.KeyI, nil
-	case 74:
-		return uinput.KeyJ, nil
-	case 75:
-		return uinput.KeyK, nil
-	case 76:
-		return uinput.KeyL, nil
-	case 77:
-		return uinput.KeyM, nil
-	case 78:
-		return uinput.KeyN, nil
-	case 79:
-		return uinput.KeyO, nil
-	case 80:
-		return uinput.KeyP, nil
-	case 81:
-		return uinput.KeyQ, nil
-	case 82:
-		return uinput.KeyR, nil
-	case 83:
-		return uinput.KeyS, nil
-	case 84:
-		return uinput.KeyT, nil
-	case 85:
-		return uinput.KeyU, nil
-	case 86:
-		return uinput.KeyV, nil
-	case 87:
-		return uinput.KeyW, nil
-	case 88:
-		return uinput.KeyX, nil
-	case 89:
-		return uinput.KeyY, nil
-	case 90:
-		return uinput.KeyZ, nil
-
-	case 48:
-		return uinput.Key0, nil
-	case 49:
-		return uinput.Key1, nil
-	case 50:
-		return uinput.Key2, nil
-	case 51:
-		return uinput.Key3, nil
-	case 52:
-		return uinput.Key4, nil
-	case 53:
-		return uinput.Key5, nil
-	case 54:
-		return uinput.Key6, nil
-	case 55:
-		return uinput.Key7, nil
-	case 56:
-		return uinput.Key8, nil
-	case 57:
-		return uinput.Key9, nil
-
-	case 32:
-		return uinput.KeySpace, nil
-	case 10:
-		return uinput.KeyEnter, nil
-
-	default:
-		return 0, fmt.Errorf("unsupported ASCII code: %d", ascii)
+	r := rune(ascii)
+	if mapping, ok := charToKey[r]; ok {
+		return mapping.Key, nil
 	}
+	return 0, fmt.Errorf("unsupported character: %c (%d)", r, ascii)
 }
 
 // Thread-safe mouse operations
@@ -221,6 +165,171 @@ func safeMouseWheel(amount int32) {
 	mouse.Wheel(false, amount)
 }
 
+func safeMouseButtonDown(button string) {
+	mouseMu.Lock()
+	defer mouseMu.Unlock()
+	switch button {
+	case "left":
+		mouse.LeftPress()
+	case "right":
+		mouse.RightPress()
+	case "middle":
+		mouse.MiddlePress()
+	}
+}
+
+func safeMouseButtonUp(button string) {
+	mouseMu.Lock()
+	defer mouseMu.Unlock()
+	switch button {
+	case "left":
+		mouse.LeftRelease()
+	case "right":
+		mouse.RightRelease()
+	case "middle":
+		mouse.MiddleRelease()
+	}
+}
+
+func safeDoubleClick(button string) {
+	mouseMu.Lock()
+	defer mouseMu.Unlock()
+	switch button {
+	case "left":
+		mouse.LeftClick()
+		time.Sleep(50 * time.Millisecond)
+		mouse.LeftClick()
+	case "right":
+		mouse.RightClick()
+		time.Sleep(50 * time.Millisecond)
+		mouse.RightClick()
+	case "middle":
+		mouse.MiddleClick()
+		time.Sleep(50 * time.Millisecond)
+		mouse.MiddleClick()
+	}
+}
+
+// keyNameToUinput maps key names to uinput key codes
+func keyNameToUinput(keyName string) (int, error) {
+	keyMap := map[string]int{
+		// Arrow keys
+		"UP":    uinput.KeyUp,
+		"DOWN":  uinput.KeyDown,
+		"LEFT":  uinput.KeyLeft,
+		"RIGHT": uinput.KeyRight,
+
+		// Function keys
+		"F1":  uinput.KeyF1,
+		"F2":  uinput.KeyF2,
+		"F3":  uinput.KeyF3,
+		"F4":  uinput.KeyF4,
+		"F5":  uinput.KeyF5,
+		"F6":  uinput.KeyF6,
+		"F7":  uinput.KeyF7,
+		"F8":  uinput.KeyF8,
+		"F9":  uinput.KeyF9,
+		"F10": uinput.KeyF10,
+		"F11": uinput.KeyF11,
+		"F12": uinput.KeyF12,
+
+		// Modifier keys
+		"CTRL":       uinput.KeyLeftctrl,
+		"LCTRL":      uinput.KeyLeftctrl,
+		"RCTRL":      uinput.KeyRightctrl,
+		"ALT":        uinput.KeyLeftalt,
+		"LALT":       uinput.KeyLeftalt,
+		"RALT":       uinput.KeyRightalt,
+		"SHIFT":      uinput.KeyLeftshift,
+		"LSHIFT":     uinput.KeyLeftshift,
+		"RSHIFT":     uinput.KeyRightshift,
+		"SUPER":      uinput.KeyLeftmeta,
+		"WIN":        uinput.KeyLeftmeta,
+		"META":       uinput.KeyLeftmeta,
+
+		// Special keys
+		"TAB":        uinput.KeyTab,
+		"ESC":        uinput.KeyEsc,
+		"ESCAPE":     uinput.KeyEsc,
+		"HOME":       uinput.KeyHome,
+		"END":        uinput.KeyEnd,
+		"PAGEUP":     uinput.KeyPageup,
+		"PAGEDOWN":   uinput.KeyPagedown,
+		"DELETE":     uinput.KeyDelete,
+		"DEL":        uinput.KeyDelete,
+		"INSERT":     uinput.KeyInsert,
+		"INS":        uinput.KeyInsert,
+		"BACKSPACE":  uinput.KeyBackspace,
+		"ENTER":      uinput.KeyEnter,
+		"RETURN":     uinput.KeyEnter,
+		"SPACE":      uinput.KeySpace,
+		"CAPSLOCK":   uinput.KeyCapslock,
+		"NUMLOCK":    uinput.KeyNumlock,
+		"SCROLLLOCK": uinput.KeyScrolllock,
+		"PRINTSCREEN": uinput.KeySysrq,
+		"PAUSE":      uinput.KeyPause,
+		"MENU":       uinput.KeyCompose,
+
+		// Single letter keys (for combos)
+		"A": uinput.KeyA, "B": uinput.KeyB, "C": uinput.KeyC,
+		"D": uinput.KeyD, "E": uinput.KeyE, "F": uinput.KeyF,
+		"G": uinput.KeyG, "H": uinput.KeyH, "I": uinput.KeyI,
+		"J": uinput.KeyJ, "K": uinput.KeyK, "L": uinput.KeyL,
+		"M": uinput.KeyM, "N": uinput.KeyN, "O": uinput.KeyO,
+		"P": uinput.KeyP, "Q": uinput.KeyQ, "R": uinput.KeyR,
+		"S": uinput.KeyS, "T": uinput.KeyT, "U": uinput.KeyU,
+		"V": uinput.KeyV, "W": uinput.KeyW, "X": uinput.KeyX,
+		"Y": uinput.KeyY, "Z": uinput.KeyZ,
+
+		// Number keys
+		"0": uinput.Key0, "1": uinput.Key1, "2": uinput.Key2,
+		"3": uinput.Key3, "4": uinput.Key4, "5": uinput.Key5,
+		"6": uinput.Key6, "7": uinput.Key7, "8": uinput.Key8,
+		"9": uinput.Key9,
+	}
+
+	if key, ok := keyMap[strings.ToUpper(keyName)]; ok {
+		return key, nil
+	}
+	return 0, fmt.Errorf("unknown key: %s", keyName)
+}
+
+// executeKeyCombo executes a key combination like "CTRL+C" or "CTRL+SHIFT+S"
+func executeKeyCombo(combo string) error {
+	parts := strings.Split(strings.ToUpper(combo), "+")
+	if len(parts) == 0 {
+		return fmt.Errorf("empty combo")
+	}
+
+	// Get all key codes
+	keys := make([]int, len(parts))
+	for i, part := range parts {
+		key, err := keyNameToUinput(strings.TrimSpace(part))
+		if err != nil {
+			return err
+		}
+		keys[i] = key
+	}
+
+	keyboardMu.Lock()
+	defer keyboardMu.Unlock()
+
+	// Press all modifier keys (all but last)
+	for i := 0; i < len(keys)-1; i++ {
+		keyboard.KeyDown(keys[i])
+	}
+
+	// Press and release the final key
+	keyboard.KeyPress(keys[len(keys)-1])
+
+	// Release modifier keys in reverse order
+	for i := len(keys) - 2; i >= 0; i-- {
+		keyboard.KeyUp(keys[i])
+	}
+
+	return nil
+}
+
 // Thread-safe keyboard operations
 func safeKeyPress(key int) {
 	keyboardMu.Lock()
@@ -244,18 +353,18 @@ func safeTypeChar(r rune) {
 	keyboardMu.Lock()
 	defer keyboardMu.Unlock()
 
-	key, err := asciiToUinput(int(r))
-	if err != nil {
-		log.Printf("Unsupported ASCII %d: %v", r, err)
+	mapping, ok := charToKey[r]
+	if !ok {
+		log.Printf("Unsupported character: %c (%d)", r, r)
 		return
 	}
 
-	if int(r) >= 65 && int(r) <= 90 {
+	if mapping.NeedShift {
 		keyboard.KeyDown(uinput.KeyLeftshift)
-		keyboard.KeyPress(key)
+		keyboard.KeyPress(mapping.Key)
 		keyboard.KeyUp(uinput.KeyLeftshift)
 	} else {
-		keyboard.KeyPress(key)
+		keyboard.KeyPress(mapping.Key)
 	}
 }
 
@@ -353,6 +462,20 @@ func handleCommand(msg *Message, clientID string) *Response {
 			safeTypeChar(r)
 		}
 
+	case "CHAR":
+		// Single character input for real-time typing
+		if len(msg.Payload) > 0 {
+			r := rune(msg.Payload[0])
+			// Handle UTF-8 multi-byte characters
+			if len(msg.Payload) > 1 {
+				runes := []rune(msg.Payload)
+				if len(runes) > 0 {
+					r = runes[0]
+				}
+			}
+			safeTypeChar(r)
+		}
+
 	case "TB":
 		safeKeyPress(uinput.KeyBackspace)
 
@@ -361,6 +484,57 @@ func handleCommand(msg *Message, clientID string) *Response {
 
 	case "ENTER":
 		safeKeyPress(uinput.KeyEnter)
+
+	case "KEY":
+		// Single key press: KEY:F1, KEY:ESC, KEY:TAB
+		key, err := keyNameToUinput(msg.Payload)
+		if err != nil {
+			return NewNACKResponse(msg.SeqID, ErrCodeValidation)
+		}
+		safeKeyPress(key)
+
+	case "KEYDOWN":
+		// Key down (for holding modifier keys): KEYDOWN:CTRL
+		key, err := keyNameToUinput(msg.Payload)
+		if err != nil {
+			return NewNACKResponse(msg.SeqID, ErrCodeValidation)
+		}
+		safeKeyDown(key)
+
+	case "KEYUP":
+		// Key up (release held key): KEYUP:CTRL
+		key, err := keyNameToUinput(msg.Payload)
+		if err != nil {
+			return NewNACKResponse(msg.SeqID, ErrCodeValidation)
+		}
+		safeKeyUp(key)
+
+	case "COMBO":
+		// Key combination: COMBO:CTRL+C, COMBO:CTRL+SHIFT+S
+		if err := executeKeyCombo(msg.Payload); err != nil {
+			return NewNACKResponse(msg.SeqID, ErrCodeValidation)
+		}
+
+	case "DBLCLICK":
+		// Double click: DBLCLICK:left
+		if err := ValidateMouseButton(msg.Payload); err != nil {
+			return NewNACKResponse(msg.SeqID, ErrCodeValidation)
+		}
+		safeDoubleClick(msg.Payload)
+
+	case "MOUSEDOWN":
+		// Mouse button down (for drag): MOUSEDOWN:left
+		if err := ValidateMouseButton(msg.Payload); err != nil {
+			return NewNACKResponse(msg.SeqID, ErrCodeValidation)
+		}
+		safeMouseButtonDown(msg.Payload)
+
+	case "MOUSEUP":
+		// Mouse button up (end drag): MOUSEUP:left
+		if err := ValidateMouseButton(msg.Payload); err != nil {
+			return NewNACKResponse(msg.SeqID, ErrCodeValidation)
+		}
+		safeMouseButtonUp(msg.Payload)
 
 	case "PING":
 		return NewPongResponse()
@@ -410,8 +584,9 @@ func handleClient(conn net.Conn) {
 			return
 		}
 
-		line = strings.TrimSpace(line)
-		if line == "" {
+		// Only trim newlines, preserve spaces in payload
+		line = strings.TrimRight(line, "\r\n")
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 
@@ -440,6 +615,11 @@ func main() {
 	defer keyboard.Close()
 	defer mouse.Close()
 
+	// Start rate limiter cleanup (every 5 minutes, remove limiters idle for 10 minutes)
+	cleanupStopCh := make(chan struct{})
+	defer close(cleanupStopCh)
+	rateLimiters.StartCleanup(5*time.Minute, 10*time.Minute, cleanupStopCh)
+
 	// Initialize TLS
 	if err := tlsConfig.EnsureCertificates(); err != nil {
 		log.Fatalf("Failed to setup TLS certificates: %v", err)
@@ -467,9 +647,15 @@ func main() {
 	log.Printf("Listening on %s:%d (TLS)", HOST, PORT)
 	log.Println("========================================")
 
-	// Print certificate and token info
+	// Print certificate info
 	tlsConfig.PrintCertificateInfo()
-	authManager.PrintToken()
+
+	// Print QR code for easy mobile connection
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "AndroControl"
+	}
+	PrintQRCode(hostname, PORT, authManager.GetToken())
 
 	log.Println("Waiting for connections...")
 

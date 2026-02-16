@@ -81,13 +81,20 @@ public class TlsHelper {
     }
 
     /**
-     * Calculates SHA-256 fingerprint of a certificate.
+     * Calculates full SHA-256 fingerprint of a certificate.
+     * Uses the entire certificate DER encoding for the hash.
      */
-    private String calculateFingerprint(X509Certificate cert) throws NoSuchAlgorithmException {
+    private String calculateFingerprint(X509Certificate cert) throws NoSuchAlgorithmException, java.security.cert.CertificateEncodingException {
         MessageDigest md = MessageDigest.getInstance("SHA-256");
-        byte[] der = cert.getPublicKey().getEncoded();
-        byte[] digest = md.digest(der);
-        return Base64.encodeToString(digest, Base64.NO_WRAP);
+        // Use full certificate DER encoding, not just public key
+        byte[] certDer = cert.getEncoded();
+        byte[] digest = md.digest(certDer);
+        // Return hex string for consistency with server
+        StringBuilder hex = new StringBuilder();
+        for (byte b : digest) {
+            hex.append(String.format("%02x", b));
+        }
+        return hex.toString();
     }
 
     /**
@@ -130,7 +137,7 @@ public class TlsHelper {
                             } else {
                                 Log.d(TAG, "Certificate fingerprint verified");
                             }
-                        } catch (NoSuchAlgorithmException e) {
+                        } catch (NoSuchAlgorithmException | java.security.cert.CertificateEncodingException e) {
                             throw new CertificateException("Failed to calculate fingerprint", e);
                         }
                     }

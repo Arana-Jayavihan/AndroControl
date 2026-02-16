@@ -78,16 +78,24 @@ func ValidatePayload(payload string) error {
 // ValidateCommand checks if command is in the allowed set
 func ValidateCommand(command string) bool {
 	validCommands := map[string]bool{
-		"M":     true, // Mouse move
-		"C":     true, // Click
-		"S":     true, // Scroll
-		"T":     true, // Type text
-		"TB":    true, // Backspace
-		"SPACE": true, // Space
-		"ENTER": true, // Enter
-		"PING":  true, // Heartbeat
-		"AUTH":  true, // Authentication
-		"VERSION": true, // Version negotiation
+		"M":         true, // Mouse move
+		"C":         true, // Click
+		"S":         true, // Scroll
+		"T":         true, // Type text
+		"CHAR":      true, // Single character (real-time typing)
+		"TB":        true, // Backspace
+		"SPACE":     true, // Space
+		"ENTER":     true, // Enter
+		"KEY":       true, // Single key press
+		"KEYDOWN":   true, // Key down (hold)
+		"KEYUP":     true, // Key up (release)
+		"COMBO":     true, // Key combination
+		"DBLCLICK":  true, // Double click
+		"MOUSEDOWN": true, // Mouse button down
+		"MOUSEUP":   true, // Mouse button up
+		"PING":      true, // Heartbeat
+		"AUTH":      true, // Authentication
+		"VERSION":   true, // Version negotiation
 	}
 	return validCommands[command]
 }

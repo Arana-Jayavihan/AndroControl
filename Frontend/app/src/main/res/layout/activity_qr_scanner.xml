@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <!-- Camera Preview -->
+    <androidx.camera.view.PreviewView
+        android:id="@+id/previewView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Scanning frame overlay -->
+    <View
+        android:layout_width="250dp"
+        android:layout_height="250dp"
+        android:layout_gravity="center"
+        android:background="@drawable/qr_scanner_frame" />
+
+    <!-- Top bar with close button -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:gravity="center_vertical"
+        android:background="#80000000">
+
+        <ImageView
+            android:id="@+id/btnClose"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:padding="8dp"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Close" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Scan QR Code"
+            android:textColor="@android:color/white"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:gravity="center" />
+
+        <View
+            android:layout_width="40dp"
+            android:layout_height="40dp" />
+    </LinearLayout>
+
+    <!-- Bottom instruction -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:padding="24dp"
+        android:text="Point camera at the QR code on the server"
+        android:textColor="@android:color/white"
+        android:textSize="14sp"
+        android:gravity="center"
+        android:background="#80000000" />
+
+</FrameLayout>

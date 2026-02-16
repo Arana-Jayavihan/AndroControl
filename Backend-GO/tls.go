@@ -4,9 +4,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"log"
@@ -157,7 +159,7 @@ func (tc *TLSConfig) LoadTLSConfig() (*tls.Config, error) {
 	}, nil
 }
 
-// GetCertificateFingerprint returns the SHA256 fingerprint of the certificate
+// GetCertificateFingerprint returns the full SHA256 fingerprint of the certificate
 func (tc *TLSConfig) GetCertificateFingerprint() (string, error) {
 	certPEM, err := os.ReadFile(tc.CertPath)
 	if err != nil {
@@ -174,8 +176,9 @@ func (tc *TLSConfig) GetCertificateFingerprint() (string, error) {
 		return "", fmt.Errorf("failed to parse certificate: %w", err)
 	}
 
-	// Calculate SHA256 fingerprint
-	fingerprint := fmt.Sprintf("%X", cert.Raw[:32]) // First 32 bytes for display
+	// Calculate full SHA256 fingerprint of certificate
+	hash := sha256.Sum256(cert.Raw)
+	fingerprint := hex.EncodeToString(hash[:])
 	return fingerprint, nil
 }
 
@@ -230,7 +233,7 @@ func (tc *TLSConfig) PrintCertificateInfo() {
 	}
 
 	log.Println("=== TLS Certificate Info ===")
-	log.Printf("Fingerprint (first 32 bytes): %s", fingerprint)
+	log.Printf("SHA-256 Fingerprint: %s", fingerprint)
 	log.Println("When connecting for the first time, verify this fingerprint matches")
 	log.Println("============================")
 }

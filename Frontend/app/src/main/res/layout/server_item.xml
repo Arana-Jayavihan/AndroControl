@@ -1,59 +1,119 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.cardview.widget.CardView
+<com.google.android.material.card.MaterialCardView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="8dp"
-    app:cardElevation="4dp">
+    android:layout_marginHorizontal="4dp"
+    android:layout_marginVertical="4dp"
+    app:cardBackgroundColor="@color/card_bg"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="1dp"
+    app:strokeColor="@color/card_stroke"
+    app:strokeWidth="1dp">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="120dp"
+        android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="8dp">
+        android:padding="12dp">
 
-        <TextView
-            android:id="@+id/serverName"
-            android:layout_width="wrap_content"
+        <!-- Server Info Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="16sp"
-            android:textStyle="bold" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-        <TextView
-            android:id="@+id/serverInfo"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="14sp" />
+            <!-- Status Indicator -->
+            <View
+                android:id="@+id/statusIndicator"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/status_dot_disconnected"/>
 
+            <!-- Server Details -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/serverName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:maxLines="1"
+                    android:ellipsize="end"/>
+
+                <TextView
+                    android:id="@+id/serverInfo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="13sp"
+                    android:maxLines="1"
+                    android:ellipsize="end"/>
+
+                <TextView
+                    android:id="@+id/serverLatency"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textColor="@color/text_disabled"
+                    android:textSize="11sp"
+                    android:visibility="gone"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Button Row -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/btnConnect"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="4dp"
-                android:layout_weight="1"
-                android:text="Connect" />
-
-            <Button
-                android:id="@+id/btnEdit"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="4dp"
-                android:layout_weight="1"
-                android:text="Edit" />
-
-            <Button
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnDelete"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="0dp"
                 android:layout_weight="1"
-                android:text="Delete" />
+                android:layout_height="36dp"
+                android:text="Delete"
+                android:textSize="12sp"
+                android:textColor="@color/error"
+                android:minWidth="0dp"
+                android:paddingHorizontal="4dp"
+                app:rippleColor="@color/error_container"/>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnEdit"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="36dp"
+                android:text="Edit"
+                android:textSize="12sp"
+                android:textColor="@color/secondary"
+                android:minWidth="0dp"
+                android:paddingHorizontal="4dp"/>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnConnect"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_weight="1.2"
+                android:layout_height="36dp"
+                android:text="Connect"
+                android:textSize="12sp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="8dp"
+                app:cornerRadius="18dp"/>
         </LinearLayout>
     </LinearLayout>
-</androidx.cardview.widget.CardView>
+</com.google.android.material.card.MaterialCardView>

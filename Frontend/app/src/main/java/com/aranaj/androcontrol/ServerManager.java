@@ -32,9 +32,42 @@ public class ServerManager {
         return servers;
     }
 
-    public void addServer(Server server) {
+    /**
+     * Adds a server if no duplicate exists.
+     * @return true if added, false if duplicate exists
+     */
+    public boolean addServer(Server server) {
+        if (isDuplicate(server)) {
+            return false;
+        }
         servers.add(server);
         saveServers();
+        return true;
+    }
+
+    /**
+     * Checks if a server with the same IP and port already exists.
+     */
+    public boolean isDuplicate(Server server) {
+        for (Server existing : servers) {
+            if (existing.getIpAddress().equals(server.getIpAddress())
+                    && existing.getPort() == server.getPort()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Finds existing server by IP and port.
+     */
+    public Server findByAddress(String ip, int port) {
+        for (Server server : servers) {
+            if (server.getIpAddress().equals(ip) && server.getPort() == port) {
+                return server;
+            }
+        }
+        return null;
     }
 
     public void removeServer(int position) {

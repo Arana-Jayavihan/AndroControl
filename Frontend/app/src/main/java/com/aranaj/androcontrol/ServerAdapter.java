@@ -4,8 +4,8 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
-import android.widget.Button;
 import androidx.recyclerview.widget.RecyclerView;
+import com.google.android.material.button.MaterialButton;
 import java.util.List;
 
 public class ServerAdapter extends RecyclerView.Adapter<ServerAdapter.ServerViewHolder> {
@@ -43,14 +43,16 @@ public class ServerAdapter extends RecyclerView.Adapter<ServerAdapter.ServerView
     }
 
     class ServerViewHolder extends RecyclerView.ViewHolder {
+        View statusIndicator;
         TextView serverName;
         TextView serverInfo;
-        Button btnConnect;
-        Button btnEdit;
-        Button btnDelete;
+        MaterialButton btnConnect;
+        MaterialButton btnEdit;
+        MaterialButton btnDelete;
 
         ServerViewHolder(View itemView) {
             super(itemView);
+            statusIndicator = itemView.findViewById(R.id.statusIndicator);
             serverName = itemView.findViewById(R.id.serverName);
             serverInfo = itemView.findViewById(R.id.serverInfo);
             btnConnect = itemView.findViewById(R.id.btnConnect);
@@ -62,7 +64,15 @@ public class ServerAdapter extends RecyclerView.Adapter<ServerAdapter.ServerView
             serverName.setText(server.getName());
             serverInfo.setText(String.format("%s:%d", server.getIpAddress(), server.getPort()));
 
-            btnConnect.setText(server.isConnected() ? "Disconnect" : "Connect");
+            // Update status indicator
+            if (server.isConnected()) {
+                statusIndicator.setBackgroundResource(R.drawable.status_dot);
+                btnConnect.setText("Disconnect");
+            } else {
+                statusIndicator.setBackgroundResource(R.drawable.status_dot_disconnected);
+                btnConnect.setText("Connect");
+            }
+
             btnConnect.setOnClickListener(v -> {
                 if (server.isConnected()) {
                     listener.onDisconnect(position);

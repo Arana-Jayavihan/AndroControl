@@ -33,8 +33,9 @@ type Message struct {
 // Format: <seq_id>|<command>:<payload>
 // Legacy format (no seq_id): <command>:<payload>
 func ParseMessage(data string) (*Message, error) {
-	data = strings.TrimSpace(data)
-	if data == "" {
+	// Only trim newlines and carriage returns, preserve spaces in payload
+	data = strings.TrimRight(data, "\r\n")
+	if strings.TrimSpace(data) == "" {
 		return nil, fmt.Errorf("empty message")
 	}
 

@@ -134,16 +134,47 @@ func (crl *ClientRateLimiters) RemoveLimiter(clientID string) {
 }
 
 // Cleanup removes stale limiters (not accessed in the given duration)
-func (crl *ClientRateLimiters) Cleanup(maxAge time.Duration) {
+func (crl *ClientRateLimiters) Cleanup(maxAge time.Duration) int {
 	crl.mu.Lock()
 	defer crl.mu.Unlock()
 
 	threshold := time.Now().Add(-maxAge)
+	removed := 0
 	for id, limiter := range crl.limiters {
 		limiter.mu.Lock()
 		if limiter.lastRefill.Before(threshold) {
 			delete(crl.limiters, id)
+			removed++
 		}
 		limiter.mu.Unlock()
 	}
+	return removed
+}
+
+// StartCleanup starts a background goroutine to periodically clean up stale limiters
+func (crl *ClientRateLimiters) StartCleanup(interval, maxAge time.Duration, stopCh <-chan struct{}) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				removed := crl.Cleanup(maxAge)
+				if removed > 0 {
+					// Optional: log cleanup activity
+					// log.Printf("Rate limiter cleanup: removed %d stale limiters", removed)
+				}
+			case <-stopCh:
+				return
+			}
+		}
+	}()
+}
+
+// Count returns the number of active rate limiters
+func (crl *ClientRateLimiters) Count() int {
+	crl.mu.RLock()
+	defer crl.mu.RUnlock()
+	return len(crl.limiters)
 }

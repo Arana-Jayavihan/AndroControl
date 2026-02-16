@@ -10,6 +10,7 @@ import java.io.PrintWriter;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -25,13 +26,15 @@ public class Protocol {
 
     private final AtomicInteger sequenceCounter;
     private final ConcurrentHashMap<Integer, PendingMessage> pendingMessages;
-    private final ExecutorService executor;
     private final Handler mainHandler;
 
+    private ExecutorService executor;
     private PrintWriter writer;
     private BufferedReader reader;
     private ProtocolListener listener;
-    private volatile boolean running;
+    private HeartbeatManager heartbeatManager;
+    private final AtomicBoolean running;
+    private Thread responseThread;
 
     public interface ProtocolListener {
         void onConnectionLost();
@@ -42,9 +45,25 @@ public class Protocol {
     public Protocol() {
         this.sequenceCounter = new AtomicInteger(0);
         this.pendingMessages = new ConcurrentHashMap<>();
-        this.executor = Executors.newFixedThreadPool(2);
         this.mainHandler = new Handler(Looper.getMainLooper());
-        this.running = false;
+        this.running = new AtomicBoolean(false);
+        this.executor = Executors.newFixedThreadPool(2);
+    }
+
+    /**
+     * Resets the protocol state for a new connection.
+     */
+    public void reset() {
+        stop();
+        sequenceCounter.set(0);
+        pendingMessages.clear();
+        writer = null;
+        reader = null;
+
+        // Recreate executor if shutdown
+        if (executor.isShutdown()) {
+            executor = Executors.newFixedThreadPool(2);
+        }
     }
 
     /**
@@ -63,21 +82,36 @@ public class Protocol {
     }
 
     /**
+     * Sets the heartbeat manager for PONG notifications.
+     */
+    public void setHeartbeatManager(HeartbeatManager heartbeatManager) {
+        this.heartbeatManager = heartbeatManager;
+    }
+
+    /**
      * Starts the response listener thread.
      */
     public void start() {
-        if (running) return;
-        running = true;
+        if (running.getAndSet(true)) {
+            return; // Already running
+        }
 
-        executor.execute(this::responseLoop);
+        responseThread = new Thread(this::responseLoop, "ProtocolResponseThread");
+        responseThread.start();
     }
 
     /**
      * Stops the protocol handler.
      */
     public void stop() {
-        running = false;
+        running.set(false);
         pendingMessages.clear();
+
+        // Interrupt the response thread if it's waiting on I/O
+        if (responseThread != null && responseThread.isAlive()) {
+            responseThread.interrupt();
+            responseThread = null;
+        }
     }
 
     /**
@@ -132,6 +166,13 @@ public class Protocol {
     }
 
     /**
+     * Checks if connected (has valid writer).
+     */
+    public boolean isConnected() {
+        return writer != null && running.get();
+    }
+
+    /**
      * Sends a command and waits for ACK.
      * Returns true if ACK received, false otherwise.
      */
@@ -143,7 +184,7 @@ public class Protocol {
      * Sends a command with callback.
      */
     public void sendCommand(String command, String payload, CommandCallback callback) {
-        if (writer == null) {
+        if (writer == null || executor.isShutdown()) {
             if (callback != null) callback.onFailure(-1, "Not connected");
             return;
         }
@@ -164,14 +205,20 @@ public class Protocol {
      * Use for high-frequency commands like mouse movement.
      */
     public void sendCommandNoAck(String command, String payload) {
-        if (writer == null) return;
+        PrintWriter w = writer; // Capture reference for thread safety
+        if (w == null || executor.isShutdown()) return;
 
         executor.execute(() -> {
             try {
+                // Double-check writer is still valid
+                if (w.checkError()) return;
+
                 // Send without sequence ID for fire-and-forget
                 String message = command + ":" + payload;
-                writer.println(message);
-                writer.flush();
+                synchronized (w) {
+                    w.println(message);
+                    w.flush();
+                }
             } catch (Exception e) {
                 Log.e(TAG, "Failed to send command", e);
             }
@@ -192,15 +239,26 @@ public class Protocol {
      * Sends a message with retry logic.
      */
     private void sendWithRetry(PendingMessage pending) {
-        for (int attempt = 0; attempt < MAX_RETRIES && running; attempt++) {
+        PrintWriter w = writer; // Capture reference for thread safety
+        if (w == null) {
+            pendingMessages.remove(pending.seqId);
+            if (pending.callback != null) {
+                mainHandler.post(() -> pending.callback.onFailure(pending.seqId, "Not connected"));
+            }
+            return;
+        }
+
+        for (int attempt = 0; attempt < MAX_RETRIES && running.get(); attempt++) {
             try {
-                writer.println(pending.message);
-                writer.flush();
+                synchronized (w) {
+                    w.println(pending.message);
+                    w.flush();
+                }
                 Log.d(TAG, "Sent: " + pending.message + " (attempt " + (attempt + 1) + ")");
 
                 // Wait for ACK
                 long startTime = System.currentTimeMillis();
-                while (System.currentTimeMillis() - startTime < ACK_TIMEOUT_MS && running) {
+                while (System.currentTimeMillis() - startTime < ACK_TIMEOUT_MS && running.get()) {
                     if (pending.acknowledged) {
                         pendingMessages.remove(pending.seqId);
                         if (pending.callback != null) {
@@ -237,7 +295,7 @@ public class Protocol {
     private void responseLoop() {
         Log.d(TAG, "Response loop started");
         try {
-            while (running && reader != null) {
+            while (running.get() && reader != null) {
                 String line = reader.readLine();
                 if (line == null) {
                     Log.w(TAG, "Connection closed by server");
@@ -253,13 +311,14 @@ public class Protocol {
                 processResponse(line);
             }
         } catch (IOException e) {
-            if (running) {
+            if (running.get()) {
                 Log.e(TAG, "Response loop error", e);
                 if (listener != null) {
                     mainHandler.post(() -> listener.onConnectionLost());
                 }
             }
         }
+        running.set(false);
         Log.d(TAG, "Response loop ended");
     }
 
@@ -271,7 +330,9 @@ public class Protocol {
 
         // Handle PONG
         if (response.equals("PONG")) {
-            // Heartbeat response handled elsewhere
+            if (heartbeatManager != null) {
+                heartbeatManager.onPongReceived();
+            }
             return;
         }
 
@@ -322,15 +383,18 @@ public class Protocol {
      * Sends a graceful disconnect message.
      */
     public void disconnect() {
-        if (writer != null) {
+        PrintWriter w = writer; // Capture reference
+        if (w != null) {
             try {
-                writer.println("DISCONNECT");
-                writer.flush();
+                synchronized (w) {
+                    w.println("DISCONNECT");
+                    w.flush();
+                }
             } catch (Exception e) {
                 Log.e(TAG, "Failed to send disconnect", e);
             }
         }
-        stop();
+        reset(); // Clear all state
     }
 
     /**
@@ -338,7 +402,7 @@ public class Protocol {
      */
     public void shutdown() {
         stop();
-        executor.shutdown();
+        executor.shutdownNow();
     }
 
     /**

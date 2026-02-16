@@ -3,16 +3,38 @@ package com.aranaj.androcontrol;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.util.Log;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.KeyEvent;
+import android.view.inputmethod.InputMethodManager;
+import android.view.inputmethod.EditorInfo;
 
+import androidx.activity.result.ActivityResultLauncher;
 import androidx.appcompat.app.AlertDialog;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.EditText;
-import android.widget.Button;
+import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.ToggleButton;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.LinearLayoutManager;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.textfield.TextInputEditText;
+import android.content.Intent;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.appcompat.app.ActionBarDrawerToggle;
+import androidx.core.view.GravityCompat;
+import androidx.drawerlayout.widget.DrawerLayout;
+import com.google.android.material.appbar.MaterialToolbar;
+
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -30,7 +52,22 @@ public class MainActivity extends AppCompatActivity implements
         Protocol.ProtocolListener {
 
     private View touchPad;
-    private Button btnLeftClick, btnMiddleClick, btnRightClick;
+    private MaterialButton btnLeftClick, btnMiddleClick, btnRightClick;
+
+    // Navigation drawer
+    private DrawerLayout drawerLayout;
+    private MaterialToolbar toolbar;
+
+    // Status bar
+    private MaterialCardView statusBar;
+    private View statusIndicator;
+    private TextView statusText, latencyText;
+
+    // Keyboard panel
+    private MaterialCardView keyboardPanel;
+    private MaterialButton btnToggleKeyboard;
+    private TextInputEditText textInput;
+    private ToggleButton btnCtrl, btnAlt, btnShift, btnWin;
 
     private String serverIp = "";
     private int serverPort = 5050;
@@ -45,9 +82,12 @@ public class MainActivity extends AppCompatActivity implements
 
     private long touchStartTime;
     private static final long TAP_THRESHOLD = 200;
+    private static final long DOUBLE_TAP_THRESHOLD = 300;
+    private static final long LONG_PRESS_THRESHOLD = 500;
     private boolean hasMoved = false;
+    private long lastTapTime = 0;
 
-    private static final int MOVEMENT_BUFFER_MS = 7;
+    private static final int MOVEMENT_BUFFER_MS = 16; // Increased for better performance
     private static final float MOVEMENT_SENSITIVITY = 1.5f;
     private long lastMovementTime = 0;
     private float accumulatedX = 0;
@@ -69,15 +109,68 @@ public class MainActivity extends AppCompatActivity implements
     private HeartbeatManager heartbeatManager;
     private Protocol protocol;
 
+    // Haptic feedback
+    private Vibrator vibrator;
+
+    // QR Code scanner
+    private static final String TAG = "MainActivity";
+
+    private final ActivityResultLauncher<Intent> qrScannerLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            result -> {
+                Log.d(TAG, "QR Scanner returned with code: " + result.getResultCode());
+                if (result.getResultCode() == RESULT_OK && result.getData() != null) {
+                    String qrContent = result.getData().getStringExtra(QRScannerActivity.EXTRA_QR_RESULT);
+                    Log.d(TAG, "QR Content: " + qrContent);
+                    if (qrContent != null && !qrContent.isEmpty()) {
+                        handleQRCodeResult(qrContent);
+                    }
+                } else {
+                    Log.d(TAG, "QR scan cancelled");
+                }
+            }
+    );
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        // Initialize haptic feedback
+        vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+
+        // Setup toolbar and navigation drawer
+        toolbar = findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+
+        drawerLayout = findViewById(R.id.drawerLayout);
+        ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
+                this, drawerLayout, toolbar,
+                R.string.navigation_drawer_open,
+                R.string.navigation_drawer_close);
+        drawerLayout.addDrawerListener(toggle);
+        toggle.syncState();
+
+        // Status bar
+        statusBar = findViewById(R.id.statusBar);
+        statusIndicator = findViewById(R.id.statusIndicator);
+        statusText = findViewById(R.id.statusText);
+        latencyText = findViewById(R.id.latencyText);
+
+        // Touch pad and mouse buttons
         touchPad = findViewById(R.id.touchPad);
         btnLeftClick = findViewById(R.id.btnLeftClick);
         btnMiddleClick = findViewById(R.id.btnMiddleClick);
         btnRightClick = findViewById(R.id.btnRightClick);
+
+        // Keyboard panel
+        keyboardPanel = findViewById(R.id.keyboardPanel);
+        btnToggleKeyboard = findViewById(R.id.btnToggleKeyboard);
+        textInput = findViewById(R.id.textInput);
+        btnCtrl = findViewById(R.id.btnCtrl);
+        btnAlt = findViewById(R.id.btnAlt);
+        btnShift = findViewById(R.id.btnShift);
+        btnWin = findViewById(R.id.btnWin);
 
         executorService = Executors.newFixedThreadPool(3);
         mainHandler = new Handler(Looper.getMainLooper());
@@ -88,6 +181,7 @@ public class MainActivity extends AppCompatActivity implements
         heartbeatManager.setListener(this);
         protocol = new Protocol();
         protocol.setListener(this);
+        protocol.setHeartbeatManager(heartbeatManager);
 
         serverManager = new ServerManager(this);
         serverList = findViewById(R.id.serverList);
@@ -97,10 +191,13 @@ public class MainActivity extends AppCompatActivity implements
             @Override
             public void onConnect(int position) {
                 Server server = serverManager.getServers().get(position);
-                // Load token from secure storage
                 String token = secureStorage.getToken(server.getId());
                 server.setAuthToken(token);
                 connectToServer(server);
+                // Close drawer when connecting
+                if (drawerLayout != null) {
+                    drawerLayout.closeDrawer(GravityCompat.START);
+                }
             }
 
             @Override
@@ -132,9 +229,290 @@ public class MainActivity extends AppCompatActivity implements
         serverList.setAdapter(serverAdapter);
 
         findViewById(R.id.btnAddServer).setOnClickListener(v -> showAddServerDialog());
+        findViewById(R.id.btnScanQR).setOnClickListener(v -> startQRScanner());
 
         setupTouchPad();
         setupClickButtons();
+        setupKeyboardPanel();
+    }
+
+    private void setupKeyboardPanel() {
+        // Toggle keyboard panel and native keyboard
+        btnToggleKeyboard.setOnClickListener(v -> {
+            if (keyboardPanel.getVisibility() == View.VISIBLE) {
+                keyboardPanel.setVisibility(View.GONE);
+                btnToggleKeyboard.setText("Keyboard");
+                // Hide native keyboard
+                InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (imm != null && textInput != null) {
+                    imm.hideSoftInputFromWindow(textInput.getWindowToken(), 0);
+                }
+            } else {
+                keyboardPanel.setVisibility(View.VISIBLE);
+                btnToggleKeyboard.setText("Hide Keyboard");
+                // Show native keyboard
+                if (textInput != null) {
+                    textInput.requestFocus();
+                    InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                    if (imm != null) {
+                        imm.showSoftInput(textInput, InputMethodManager.SHOW_IMPLICIT);
+                    }
+                }
+            }
+        });
+
+        // Native keyboard input - send characters directly without displaying
+        textInput.addTextChangedListener(new TextWatcher() {
+            private boolean isClearing = false;
+
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (isClearing) return;
+                String text = s.toString();
+                if (text.isEmpty()) return;
+
+                // Send each character directly to server
+                if (out != null && protocol != null) {
+                    for (char c : text.toCharArray()) {
+                        sendCharacter(c);
+                    }
+                }
+
+                // Clear immediately
+                isClearing = true;
+                s.clear();
+                isClearing = false;
+            }
+        });
+
+        // Capture backspace, delete, enter from native keyboard
+        textInput.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                if (keyCode == KeyEvent.KEYCODE_DEL) {
+                    sendKey("BACKSPACE");
+                    return true;
+                } else if (keyCode == KeyEvent.KEYCODE_FORWARD_DEL) {
+                    sendKey("DELETE");
+                    return true;
+                } else if (keyCode == KeyEvent.KEYCODE_ENTER) {
+                    sendKey("ENTER");
+                    return true;
+                }
+            }
+            return false;
+        });
+
+        // Special keys
+        findViewById(R.id.btnTab).setOnClickListener(v -> sendKey("TAB"));
+        findViewById(R.id.btnEsc).setOnClickListener(v -> sendKey("ESC"));
+
+        // Arrow keys
+        findViewById(R.id.btnUp).setOnClickListener(v -> sendKeyWithModifiers("UP"));
+        findViewById(R.id.btnDown).setOnClickListener(v -> sendKeyWithModifiers("DOWN"));
+        findViewById(R.id.btnLeft).setOnClickListener(v -> sendKeyWithModifiers("LEFT"));
+        findViewById(R.id.btnRight).setOnClickListener(v -> sendKeyWithModifiers("RIGHT"));
+
+        // Navigation keys
+        findViewById(R.id.btnHome).setOnClickListener(v -> sendKeyWithModifiers("HOME"));
+        findViewById(R.id.btnEnd).setOnClickListener(v -> sendKeyWithModifiers("END"));
+        findViewById(R.id.btnDel).setOnClickListener(v -> sendKey("DELETE"));
+
+        // Number keys
+        int[] numKeyIds = {R.id.btnNum1, R.id.btnNum2, R.id.btnNum3, R.id.btnNum4, R.id.btnNum5,
+                          R.id.btnNum6, R.id.btnNum7, R.id.btnNum8, R.id.btnNum9, R.id.btnNum0};
+        for (int i = 0; i < numKeyIds.length; i++) {
+            final char numChar = (i == 9) ? '0' : (char) ('1' + i);
+            final String keyName = String.valueOf(numChar);
+            findViewById(numKeyIds[i]).setOnClickListener(v -> {
+                vibrate(20);
+                // Check for modifier combos
+                boolean hasComboModifier = (btnCtrl != null && btnCtrl.isChecked()) ||
+                                           (btnAlt != null && btnAlt.isChecked()) ||
+                                           (btnWin != null && btnWin.isChecked());
+
+                if (hasComboModifier) {
+                    // Send as combo: CTRL+1, ALT+2, WIN+3, etc.
+                    StringBuilder combo = new StringBuilder();
+                    if (btnCtrl != null && btnCtrl.isChecked()) combo.append("CTRL+");
+                    if (btnAlt != null && btnAlt.isChecked()) combo.append("ALT+");
+                    if (btnShift != null && btnShift.isChecked()) combo.append("SHIFT+");
+                    if (btnWin != null && btnWin.isChecked()) combo.append("SUPER+");
+                    combo.append(keyName);
+
+                    if (protocol != null) {
+                        protocol.sendCommandNoAck("COMBO", combo.toString());
+                    }
+
+                    // Reset modifiers
+                    if (btnCtrl != null) btnCtrl.setChecked(false);
+                    if (btnAlt != null) btnAlt.setChecked(false);
+                    if (btnShift != null) btnShift.setChecked(false);
+                    if (btnWin != null) btnWin.setChecked(false);
+                } else {
+                    // Regular number character
+                    sendCharacter(numChar);
+                }
+            });
+        }
+
+        // QWERTY letter keys
+        int[] letterKeyIds = {
+            R.id.btnQ, R.id.btnW, R.id.btnE, R.id.btnR, R.id.btnT, R.id.btnY, R.id.btnU, R.id.btnI, R.id.btnO, R.id.btnP,
+            R.id.btnA, R.id.btnS, R.id.btnD, R.id.btnF, R.id.btnG, R.id.btnH, R.id.btnJ, R.id.btnK, R.id.btnL,
+            R.id.btnZ, R.id.btnX, R.id.btnC, R.id.btnV, R.id.btnB, R.id.btnN, R.id.btnM
+        };
+        char[] letterChars = {
+            'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p',
+            'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l',
+            'z', 'x', 'c', 'v', 'b', 'n', 'm'
+        };
+        for (int i = 0; i < letterKeyIds.length; i++) {
+            final char letter = letterChars[i];
+            final String keyName = String.valueOf(Character.toUpperCase(letter));
+            findViewById(letterKeyIds[i]).setOnClickListener(v -> {
+                vibrate(20);
+                // Check for modifier combos (Ctrl, Alt, Win)
+                boolean hasComboModifier = (btnCtrl != null && btnCtrl.isChecked()) ||
+                                           (btnAlt != null && btnAlt.isChecked()) ||
+                                           (btnWin != null && btnWin.isChecked());
+
+                if (hasComboModifier) {
+                    // Send as combo: CTRL+C, ALT+F, WIN+D, etc.
+                    StringBuilder combo = new StringBuilder();
+                    if (btnCtrl != null && btnCtrl.isChecked()) combo.append("CTRL+");
+                    if (btnAlt != null && btnAlt.isChecked()) combo.append("ALT+");
+                    if (btnShift != null && btnShift.isChecked()) combo.append("SHIFT+");
+                    if (btnWin != null && btnWin.isChecked()) combo.append("SUPER+");
+                    combo.append(keyName);
+
+                    if (protocol != null) {
+                        protocol.sendCommandNoAck("COMBO", combo.toString());
+                    }
+
+                    // Reset modifiers
+                    if (btnCtrl != null) btnCtrl.setChecked(false);
+                    if (btnAlt != null) btnAlt.setChecked(false);
+                    if (btnShift != null) btnShift.setChecked(false);
+                    if (btnWin != null) btnWin.setChecked(false);
+                } else if (btnShift != null && btnShift.isChecked()) {
+                    // Uppercase letter
+                    sendCharacter(Character.toUpperCase(letter));
+                    btnShift.setChecked(false);
+                } else {
+                    // Regular lowercase letter
+                    sendCharacter(letter);
+                }
+            });
+        }
+
+        // Space, Enter, Backspace
+        findViewById(R.id.btnSpace).setOnClickListener(v -> {
+            vibrate(20);
+            sendCharacter(' ');
+        });
+        findViewById(R.id.btnEnter).setOnClickListener(v -> {
+            vibrate(20);
+            sendKey("ENTER");
+        });
+        findViewById(R.id.btnBackspace).setOnClickListener(v -> {
+            vibrate(20);
+            sendKey("BACKSPACE");
+        });
+
+        // Function keys
+        int[] fKeyIds = {R.id.btnF1, R.id.btnF2, R.id.btnF3, R.id.btnF4,
+                         R.id.btnF5, R.id.btnF6, R.id.btnF7, R.id.btnF8,
+                         R.id.btnF9, R.id.btnF10, R.id.btnF11, R.id.btnF12};
+        for (int i = 0; i < fKeyIds.length; i++) {
+            final int fNum = i + 1;
+            findViewById(fKeyIds[i]).setOnClickListener(v -> sendKeyWithModifiers("F" + fNum));
+        }
+    }
+
+    private void sendCharacter(char c) {
+        if (out == null || protocol == null) return;
+
+        try {
+            // Send character using the CHAR command (single character typing)
+            protocol.sendCommandNoAck("CHAR", String.valueOf(c));
+        } catch (Exception e) {
+            Log.e(TAG, "Error sending character", e);
+        }
+    }
+
+    private void sendKey(String keyName) {
+        if (out != null && protocol != null) {
+            try {
+                protocol.sendCommandNoAck("KEY", keyName);
+            } catch (Exception e) {
+                Log.e(TAG, "Error sending key", e);
+            }
+        }
+    }
+
+    private void sendKeyWithModifiers(String keyName) {
+        if (out != null && protocol != null) {
+            try {
+                vibrate(30);
+                StringBuilder combo = new StringBuilder();
+                if (btnCtrl != null && btnCtrl.isChecked()) combo.append("CTRL+");
+                if (btnAlt != null && btnAlt.isChecked()) combo.append("ALT+");
+                if (btnShift != null && btnShift.isChecked()) combo.append("SHIFT+");
+                if (btnWin != null && btnWin.isChecked()) combo.append("SUPER+");
+                combo.append(keyName);
+
+                // Reset modifiers after use
+                boolean hasModifiers = (btnCtrl != null && btnCtrl.isChecked()) ||
+                                       (btnAlt != null && btnAlt.isChecked()) ||
+                                       (btnShift != null && btnShift.isChecked()) ||
+                                       (btnWin != null && btnWin.isChecked());
+                if (hasModifiers) {
+                    protocol.sendCommandNoAck("COMBO", combo.toString());
+                    if (btnCtrl != null) btnCtrl.setChecked(false);
+                    if (btnAlt != null) btnAlt.setChecked(false);
+                    if (btnShift != null) btnShift.setChecked(false);
+                    if (btnWin != null) btnWin.setChecked(false);
+                } else {
+                    protocol.sendCommandNoAck("KEY", keyName);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error sending key with modifiers", e);
+            }
+        }
+    }
+
+    private void vibrate(int durationMs) {
+        try {
+            if (vibrator != null && vibrator.hasVibrator()) {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE));
+                } else {
+                    vibrator.vibrate(durationMs);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Vibration failed", e);
+        }
+    }
+
+    private void updateStatusBar(boolean connected, String serverName) {
+        mainHandler.post(() -> {
+            if (connected) {
+                statusBar.setVisibility(View.VISIBLE);
+                statusBar.setCardBackgroundColor(getResources().getColor(R.color.success_container, getTheme()));
+                statusIndicator.setBackgroundResource(R.drawable.status_dot);
+                statusText.setText("Connected to " + serverName);
+                statusText.setTextColor(getResources().getColor(R.color.success, getTheme()));
+            } else {
+                statusBar.setVisibility(View.GONE);
+            }
+        });
     }
 
     private void setupTouchPad() {
@@ -179,6 +557,7 @@ public class MainActivity extends AppCompatActivity implements
     private boolean handleSingleFingerGesture(MotionEvent event) {
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
+                touchPad.setPressed(true);
                 touchStartTime = System.currentTimeMillis();
                 lastX = event.getX();
                 lastY = event.getY();
@@ -213,11 +592,30 @@ public class MainActivity extends AppCompatActivity implements
                 return true;
 
             case MotionEvent.ACTION_UP:
+                touchPad.setPressed(false);
                 sendAccumulatedMovement();
 
                 long touchDuration = System.currentTimeMillis() - touchStartTime;
-                if (!hasMoved && touchDuration < TAP_THRESHOLD) {
-                    sendMouseClick("left");
+                long timeSinceLastTap = System.currentTimeMillis() - lastTapTime;
+
+                if (!hasMoved) {
+                    if (touchDuration >= LONG_PRESS_THRESHOLD) {
+                        // Long press = right click
+                        vibrate(50);
+                        sendMouseClick("right");
+                    } else if (touchDuration < TAP_THRESHOLD) {
+                        if (timeSinceLastTap < DOUBLE_TAP_THRESHOLD) {
+                            // Double tap = double click
+                            vibrate(30);
+                            sendDoubleClick("left");
+                            lastTapTime = 0;
+                        } else {
+                            // Single tap = left click
+                            vibrate(20);
+                            sendMouseClick("left");
+                            lastTapTime = System.currentTimeMillis();
+                        }
+                    }
                     touchPad.performClick();
                 }
 
@@ -230,38 +628,141 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     private void setupClickButtons() {
-        btnLeftClick.setOnClickListener(v -> sendMouseClick("left"));
-        btnMiddleClick.setOnClickListener(v -> sendMouseClick("middle"));
-        btnRightClick.setOnClickListener(v -> sendMouseClick("right"));
+        // Left click with hold-to-drag support
+        if (btnLeftClick != null) {
+            btnLeftClick.setOnTouchListener((v, event) -> {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        vibrate(20);
+                        sendMouseDown("left");
+                        v.setPressed(true);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        sendMouseUp("left");
+                        v.setPressed(false);
+                        return true;
+                }
+                return false;
+            });
+            // Double-tap detection for double-click
+            btnLeftClick.setOnClickListener(new View.OnClickListener() {
+                private long lastClickTime = 0;
+                @Override
+                public void onClick(View v) {
+                    long currentTime = System.currentTimeMillis();
+                    if (currentTime - lastClickTime < DOUBLE_TAP_THRESHOLD) {
+                        vibrate(30);
+                        sendDoubleClick("left");
+                        lastClickTime = 0;
+                    } else {
+                        lastClickTime = currentTime;
+                    }
+                }
+            });
+        }
+
+        // Middle click with hold support
+        if (btnMiddleClick != null) {
+            btnMiddleClick.setOnTouchListener((v, event) -> {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        vibrate(20);
+                        sendMouseDown("middle");
+                        v.setPressed(true);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        sendMouseUp("middle");
+                        v.setPressed(false);
+                        return true;
+                }
+                return false;
+            });
+        }
+
+        // Right click with hold support
+        if (btnRightClick != null) {
+            btnRightClick.setOnTouchListener((v, event) -> {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        vibrate(20);
+                        sendMouseDown("right");
+                        v.setPressed(true);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        sendMouseUp("right");
+                        v.setPressed(false);
+                        return true;
+                }
+                return false;
+            });
+        }
+    }
+
+    private void sendMouseDown(String button) {
+        if (protocol != null) {
+            executorService.execute(() -> {
+                protocol.sendCommandNoAck("MOUSEDOWN", button);
+            });
+        }
+    }
+
+    private void sendMouseUp(String button) {
+        if (protocol != null) {
+            executorService.execute(() -> {
+                protocol.sendCommandNoAck("MOUSEUP", button);
+            });
+        }
     }
 
     private void showAddServerDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_add_server, null);
 
-        EditText nameInput = dialogView.findViewById(R.id.serverNameInput);
-        EditText ipInput = dialogView.findViewById(R.id.serverIpInput);
-        EditText portInput = dialogView.findViewById(R.id.serverPortInput);
-        EditText tokenInput = dialogView.findViewById(R.id.serverTokenInput);
+        TextInputEditText nameInput = dialogView.findViewById(R.id.serverNameInput);
+        TextInputEditText ipInput = dialogView.findViewById(R.id.serverIpInput);
+        TextInputEditText portInput = dialogView.findViewById(R.id.serverPortInput);
+        TextInputEditText tokenInput = dialogView.findViewById(R.id.serverTokenInput);
         portInput.setText(String.valueOf(serverPort));
 
         builder.setView(dialogView)
                 .setTitle("Add Server")
                 .setPositiveButton("Add", (dialog, which) -> {
-                    String name = nameInput.getText().toString();
-                    String ip = ipInput.getText().toString();
-                    int port = Integer.parseInt(portInput.getText().toString());
+                    String name = nameInput.getText().toString().trim();
+                    String ip = ipInput.getText().toString().trim();
+                    String portStr = portInput.getText().toString().trim();
                     String token = tokenInput.getText().toString();
 
-                    Server server = new Server(name, ip, port, token);
-                    serverManager.addServer(server);
+                    // Validate inputs
+                    if (name.isEmpty() || ip.isEmpty()) {
+                        Toast.makeText(this, "Name and IP are required", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
 
-                    // Store token securely
+                    int port;
+                    try {
+                        port = portStr.isEmpty() ? 5050 : Integer.parseInt(portStr);
+                    } catch (NumberFormatException e) {
+                        Toast.makeText(this, "Invalid port number", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    Server server = new Server(name, ip, port, token);
+
+                    // Check for duplicate
+                    if (!serverManager.addServer(server)) {
+                        Toast.makeText(this, "Server already exists: " + ip + ":" + port, Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
                     if (!token.isEmpty()) {
                         secureStorage.saveToken(server.getId(), token);
                     }
 
                     serverAdapter.notifyItemInserted(serverManager.getServers().size() - 1);
+                    Toast.makeText(this, "Server added", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -272,16 +773,15 @@ public class MainActivity extends AppCompatActivity implements
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_add_server, null);
 
-        EditText nameInput = dialogView.findViewById(R.id.serverNameInput);
-        EditText ipInput = dialogView.findViewById(R.id.serverIpInput);
-        EditText portInput = dialogView.findViewById(R.id.serverPortInput);
-        EditText tokenInput = dialogView.findViewById(R.id.serverTokenInput);
+        TextInputEditText nameInput = dialogView.findViewById(R.id.serverNameInput);
+        TextInputEditText ipInput = dialogView.findViewById(R.id.serverIpInput);
+        TextInputEditText portInput = dialogView.findViewById(R.id.serverPortInput);
+        TextInputEditText tokenInput = dialogView.findViewById(R.id.serverTokenInput);
 
         nameInput.setText(server.getName());
         ipInput.setText(server.getIpAddress());
         portInput.setText(String.valueOf(server.getPort()));
 
-        // Load existing token
         String existingToken = secureStorage.getToken(server.getId());
         if (existingToken != null) {
             tokenInput.setHint("Token saved (enter new to change)");
@@ -290,9 +790,27 @@ public class MainActivity extends AppCompatActivity implements
         builder.setView(dialogView)
                 .setTitle("Edit Server")
                 .setPositiveButton("Save", (dialog, which) -> {
-                    server.setName(nameInput.getText().toString());
-                    server.setIpAddress(ipInput.getText().toString());
-                    server.setPort(Integer.parseInt(portInput.getText().toString()));
+                    String name = nameInput.getText().toString().trim();
+                    String ip = ipInput.getText().toString().trim();
+                    String portStr = portInput.getText().toString().trim();
+
+                    // Validate inputs
+                    if (name.isEmpty() || ip.isEmpty()) {
+                        Toast.makeText(this, "Name and IP are required", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    int port;
+                    try {
+                        port = portStr.isEmpty() ? server.getPort() : Integer.parseInt(portStr);
+                    } catch (NumberFormatException e) {
+                        Toast.makeText(this, "Invalid port number", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    server.setName(name);
+                    server.setIpAddress(ip);
+                    server.setPort(port);
 
                     String newToken = tokenInput.getText().toString();
                     if (!newToken.isEmpty()) {
@@ -310,12 +828,10 @@ public class MainActivity extends AppCompatActivity implements
     private void disconnectFromServer() {
         executorService.execute(() -> {
             try {
-                // Send graceful disconnect
                 if (protocol != null) {
                     protocol.disconnect();
                 }
 
-                // Stop heartbeat
                 heartbeatManager.stop();
 
                 if (socket != null && !socket.isClosed()) {
@@ -326,6 +842,7 @@ public class MainActivity extends AppCompatActivity implements
                 in = null;
 
                 mainHandler.post(() -> {
+                    updateStatusBar(false, null);
                     if (currentServer != null) {
                         currentServer.setConnected(false);
                         currentServer = null;
@@ -345,27 +862,26 @@ public class MainActivity extends AppCompatActivity implements
         serverIp = server.getIpAddress();
         serverPort = server.getPort();
 
-        // Initialize TLS helper for this server
         tlsHelper = new TlsHelper(this, serverIp, serverPort);
 
         executorService.execute(() -> {
             try {
-                // Close existing connection
+                // Reset protocol state before new connection
+                protocol.reset();
+                heartbeatManager.stop();
+
                 if (socket != null && !socket.isClosed()) {
                     socket.close();
                 }
 
-                // Create TLS socket
                 socket = tlsHelper.createSocket(serverIp, serverPort);
                 socket.startHandshake();
 
                 out = new PrintWriter(socket.getOutputStream(), true);
                 in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
-                // Setup protocol with streams
                 protocol.setStreams(out, in);
 
-                // Authenticate
                 String token = server.getAuthToken();
                 if (token == null || token.isEmpty()) {
                     mainHandler.post(() -> {
@@ -386,12 +902,12 @@ public class MainActivity extends AppCompatActivity implements
                     return;
                 }
 
-                // Start protocol handler and heartbeat
                 protocol.start();
                 heartbeatManager.setWriter(out);
                 heartbeatManager.start();
 
                 mainHandler.post(() -> {
+                    updateStatusBar(true, server.getName());
                     Toast.makeText(this, "Connected to " + server.getName(), Toast.LENGTH_SHORT).show();
                     server.setConnected(true);
                     serverManager.setLastConnectedServer(server.getId());
@@ -415,6 +931,12 @@ public class MainActivity extends AppCompatActivity implements
                 return "Certificate changed! Server may have been compromised.";
             }
             return "TLS error: " + e.getMessage();
+        }
+        if (e instanceof java.net.ConnectException) {
+            return "Cannot reach server. Check IP address and port.";
+        }
+        if (e instanceof java.net.SocketTimeoutException) {
+            return "Connection timed out. Server may be offline.";
         }
         return "Connection failed: " + e.getMessage();
     }
@@ -454,8 +976,6 @@ public class MainActivity extends AppCompatActivity implements
             executorService.execute(() -> {
                 int adjustedX = (int)(deltaX * MOVEMENT_SENSITIVITY);
                 int adjustedY = (int)(deltaY * MOVEMENT_SENSITIVITY);
-
-                // Use fire-and-forget for high-frequency mouse movements
                 String message = String.format("M:%d,%d", adjustedX, adjustedY);
                 out.println(message);
                 out.flush();
@@ -464,53 +984,90 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     private void sendMouseClick(String button) {
-        if (out != null) {
-            // Use protocol for ACK tracking on clicks
-            protocol.sendCommandNoAck("C", button);
+        if (out != null && protocol != null) {
+            try {
+                protocol.sendCommandNoAck("C", button);
+            } catch (Exception e) {
+                Log.e(TAG, "Error sending mouse click", e);
+            }
+        }
+    }
+
+    private void sendDoubleClick(String button) {
+        if (out != null && protocol != null) {
+            try {
+                protocol.sendCommandNoAck("DBLCLICK", button);
+            } catch (Exception e) {
+                Log.e(TAG, "Error sending double click", e);
+            }
         }
     }
 
     private void sendScroll(int amount) {
-        if (out != null) {
-            protocol.sendCommandNoAck("S", String.valueOf(amount));
+        if (out != null && protocol != null) {
+            try {
+                protocol.sendCommandNoAck("S", String.valueOf(amount));
+            } catch (Exception e) {
+                Log.e(TAG, "Error sending scroll", e);
+            }
         }
     }
 
     private void sendText(String text) {
-        if (out != null) {
-            protocol.sendCommand("T", text);
+        if (out != null && protocol != null) {
+            try {
+                protocol.sendCommand("T", text);
+            } catch (Exception e) {
+                Log.e(TAG, "Error sending text", e);
+            }
         }
     }
 
     // HeartbeatManager.HeartbeatListener implementation
     @Override
     public void onHeartbeatTimeout() {
-        Toast.makeText(this, "Connection lost (heartbeat timeout)", Toast.LENGTH_LONG).show();
+        mainHandler.post(() -> {
+            statusBar.setVisibility(View.VISIBLE);
+            statusBar.setCardBackgroundColor(getResources().getColor(R.color.error_container, getTheme()));
+            statusIndicator.setBackgroundResource(R.drawable.status_dot_disconnected);
+            statusText.setText("Connection lost - Reconnecting...");
+            statusText.setTextColor(getResources().getColor(R.color.error, getTheme()));
+            Toast.makeText(this, "Connection lost (heartbeat timeout)", Toast.LENGTH_LONG).show();
+        });
         disconnectFromServer();
     }
 
     @Override
     public void onHeartbeatRestored() {
-        Toast.makeText(this, "Connection restored", Toast.LENGTH_SHORT).show();
+        mainHandler.post(() -> {
+            Toast.makeText(this, "Connection restored", Toast.LENGTH_SHORT).show();
+        });
     }
 
     // Protocol.ProtocolListener implementation
     @Override
     public void onConnectionLost() {
-        Toast.makeText(this, "Connection lost", Toast.LENGTH_LONG).show();
+        mainHandler.post(() -> {
+            updateStatusBar(false, null);
+            Toast.makeText(this, "Connection lost", Toast.LENGTH_LONG).show();
+        });
         disconnectFromServer();
     }
 
     @Override
     public void onAuthenticationRequired() {
-        if (currentServer != null) {
-            showTokenInputDialog(currentServer);
-        }
+        mainHandler.post(() -> {
+            if (currentServer != null) {
+                showTokenInputDialog(currentServer);
+            }
+        });
     }
 
     @Override
     public void onError(String message) {
-        Toast.makeText(this, "Error: " + message, Toast.LENGTH_SHORT).show();
+        mainHandler.post(() -> {
+            Toast.makeText(this, "Error: " + message, Toast.LENGTH_SHORT).show();
+        });
     }
 
     @Override
@@ -520,6 +1077,97 @@ public class MainActivity extends AppCompatActivity implements
             String token = secureStorage.getToken(currentServer.getId());
             currentServer.setAuthToken(token);
             connectToServer(currentServer);
+        }
+    }
+
+    // QR Code scanning methods
+    private void startQRScanner() {
+        Log.d(TAG, "Starting QR Scanner Activity");
+        Intent intent = new Intent(this, QRScannerActivity.class);
+        qrScannerLauncher.launch(intent);
+    }
+
+    private void handleQRCodeResult(String qrContent) {
+        Log.d(TAG, "handleQRCodeResult called with: " + qrContent);
+        try {
+            JSONObject json = new JSONObject(qrContent);
+            Log.d(TAG, "JSON parsed successfully");
+
+            String name = json.optString("name", "Server");
+            String ip = json.getString("ip");
+            int port = json.optInt("port", 5050);
+            String token = json.optString("token", "");
+
+            Log.d(TAG, "Parsed - Name: " + name + ", IP: " + ip + ", Port: " + port);
+
+            if (ip.isEmpty()) {
+                Toast.makeText(this, "Invalid QR code: missing IP address", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Check if server already exists
+            Server existingServer = serverManager.findByAddress(ip, port);
+            if (existingServer != null) {
+                // Server exists - offer to connect
+                Toast.makeText(this, "Server already exists", Toast.LENGTH_SHORT).show();
+                new AlertDialog.Builder(this)
+                        .setTitle("Server Exists")
+                        .setMessage("Server \"" + existingServer.getName() + "\" (" + ip + ":" + port + ") already exists. Connect now?")
+                        .setPositiveButton("Connect", (dialog, which) -> {
+                            String existingToken = secureStorage.getToken(existingServer.getId());
+                            existingServer.setAuthToken(existingToken);
+                            connectToServer(existingServer);
+                            if (drawerLayout != null) {
+                                drawerLayout.closeDrawer(GravityCompat.START);
+                            }
+                        })
+                        .setNegativeButton("Cancel", null)
+                        .show();
+                return;
+            }
+
+            // Create and save the new server
+            Server server = new Server(name, ip, port, token);
+            serverManager.addServer(server);
+
+            if (!token.isEmpty()) {
+                secureStorage.saveToken(server.getId(), token);
+            }
+
+            serverAdapter.notifyItemInserted(serverManager.getServers().size() - 1);
+
+            Toast.makeText(this, "Server added: " + name, Toast.LENGTH_SHORT).show();
+
+            // Ask if user wants to connect immediately
+            new AlertDialog.Builder(this)
+                    .setTitle("Connect Now?")
+                    .setMessage("Server \"" + name + "\" has been added. Connect now?")
+                    .setPositiveButton("Connect", (dialog, which) -> {
+                        server.setAuthToken(token);
+                        connectToServer(server);
+                        // Close drawer after connecting
+                        if (drawerLayout != null) {
+                            drawerLayout.closeDrawer(GravityCompat.START);
+                        }
+                    })
+                    .setNegativeButton("Later", null)
+                    .show();
+
+        } catch (JSONException e) {
+            Log.e(TAG, "Failed to parse QR code: " + qrContent, e);
+            Toast.makeText(this, "Invalid QR code format. Content: " + qrContent.substring(0, Math.min(50, qrContent.length())), Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Log.e(TAG, "Unexpected error handling QR code", e);
+            Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (drawerLayout != null && drawerLayout.isDrawerOpen(GravityCompat.START)) {
+            drawerLayout.closeDrawer(GravityCompat.START);
+        } else {
+            super.onBackPressed();
         }
     }
 

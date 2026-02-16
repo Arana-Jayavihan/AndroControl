@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary Colors - Deep Purple (Dark) -->
+    <color name="primary">#D0BCFF</color>
+    <color name="primary_variant">#6750A4</color>
+    <color name="primary_container">#4F378B</color>
+    <color name="on_primary">#381E72</color>
+    <color name="on_primary_container">#EADDFF</color>
+
+    <!-- Secondary Colors - Teal (Dark) -->
+    <color name="secondary">#CCC2DC</color>
+    <color name="secondary_container">#4A4458</color>
+    <color name="on_secondary">#332D41</color>
+
+    <!-- Tertiary Colors (Dark) -->
+    <color name="tertiary">#EFB8C8</color>
+    <color name="tertiary_container">#633B48</color>
+
+    <!-- Background & Surface (Dark) -->
+    <color name="background">#1C1B1F</color>
+    <color name="surface">#1C1B1F</color>
+    <color name="surface_variant">#49454F</color>
+    <color name="on_background">#E6E1E5</color>
+    <color name="on_surface">#E6E1E5</color>
+    <color name="on_surface_variant">#CAC4D0</color>
+
+    <!-- Status Colors (Dark) -->
+    <color name="success">#81C784</color>
+    <color name="success_light">#A5D6A7</color>
+    <color name="success_container">#1B5E20</color>
+    <color name="error">#F2B8B5</color>
+    <color name="error_container">#8C1D18</color>
+    <color name="warning">#FFB74D</color>
+    <color name="warning_container">#E65100</color>
+
+    <!-- Outline (Dark) -->
+    <color name="outline">#938F99</color>
+    <color name="outline_variant">#49454F</color>
+
+    <!-- Touchpad Colors (Dark) -->
+    <color name="touchpad_bg">#2B2930</color>
+    <color name="touchpad_pressed">#363340</color>
+    <color name="touchpad_stroke">#49454F</color>
+
+    <!-- Card Colors (Dark) -->
+    <color name="card_bg">#2B2930</color>
+    <color name="card_stroke">#49454F</color>
+
+    <!-- Text Colors (Dark) -->
+    <color name="text_primary">#E6E1E5</color>
+    <color name="text_secondary">#CAC4D0</color>
+    <color name="text_disabled">#938F99</color>
+</resources>

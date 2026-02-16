@@ -27,38 +27,47 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="ed77e808-61b0-4947-ab3f-8af4efad977a" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/../Backend-GO/androcontrol" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/../Backend-GO/auth.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/../Backend-GO/auth_token" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/../Backend-GO/certs/server.crt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/../Backend-GO/certs/server.key" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/../Backend-GO/connmanager.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/../Backend-GO/protocol.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/../Backend-GO/ratelimit.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/../Backend-GO/tls.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/../Backend-GO/validation.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.gradle/8.9/executionHistory/executionHistory.bin" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.gradle/buildOutputCleanup/outputFiles.bin" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.gradle/config.properties" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/HeartbeatManager.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/Protocol.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/SecureStorage.java" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/TlsHelper.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/../.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Backend-GO/androcontrol" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Backend-GO/auth_token" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Backend-GO/certs/server.crt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Backend-GO/certs/server.key" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/../Backend-GO/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/main.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gradle/8.9/checksums/checksums.lock" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/8.9/checksums/checksums.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gradle/8.9/dependencies-accessors/19666b7ee7477488faba75fa6199859f9eeb0a35/metadata.bin" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/8.9/dependencies-accessors/19666b7ee7477488faba75fa6199859f9eeb0a35/metadata.bin" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gradle/8.9/executionHistory/executionHistory.lock" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/8.9/executionHistory/executionHistory.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gradle/8.9/fileHashes/fileHashes.bin" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/8.9/fileHashes/fileHashes.bin" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gradle/8.9/fileHashes/fileHashes.lock" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/8.9/fileHashes/fileHashes.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gradle/8.9/fileHashes/resourceHashesCache.bin" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/8.9/fileHashes/resourceHashesCache.bin" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Backend-GO/ratelimit.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/ratelimit.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Backend-GO/tls.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/tls.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Backend-GO/validation.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/validation.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/8.9/checksums/checksums.lock" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/8.9/dependencies-accessors/19666b7ee7477488faba75fa6199859f9eeb0a35/metadata.bin" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/8.9/dependencies-accessors/gc.properties" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/8.9/executionHistory/executionHistory.bin" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/8.9/executionHistory/executionHistory.lock" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/8.9/fileChanges/last-build.bin" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/8.9/fileHashes/fileHashes.bin" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/8.9/fileHashes/fileHashes.lock" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/8.9/fileHashes/resourceHashesCache.bin" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/8.9/gc.properties" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/.gradle/buildOutputCleanup/buildOutputCleanup.lock" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/buildOutputCleanup/buildOutputCleanup.lock" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.gradle/buildOutputCleanup/cache.properties" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/buildOutputCleanup/cache.properties" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gradle/file-system.probe" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/file-system.probe" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/buildOutputCleanup/outputFiles.bin" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/buildOutputCleanup/outputFiles.bin" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/config.properties" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/config.properties" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gradle/file-system.probe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/build.gradle.kts" beforeDir="false" afterPath="$PROJECT_DIR$/app/build.gradle.kts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/MainActivity.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/MainActivity.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/Server.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/Server.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/Protocol.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/Protocol.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/ServerAdapter.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/ServerAdapter.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/ServerManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/ServerManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/TlsHelper.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/TlsHelper.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/res/layout/activity_main.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/layout/activity_main.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/src/main/res/layout/dialog_add_server.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/layout/dialog_add_server.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/res/layout/server_item.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/layout/server_item.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/res/values-night/themes.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/values-night/themes.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/res/values/colors.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/values/colors.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/res/values/strings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/values/strings.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/res/values/themes.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/values/themes.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/res/xml/backup_rules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/xml/backup_rules.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/res/xml/data_extraction_rules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/xml/data_extraction_rules.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -68,7 +77,7 @@
   <component name="ClangdSettings">
     <option name="formatViaClangd" value="false" />
   </component>
-  <component name="ExecutionTargetManager" SELECTED_TARGET="device_and_snapshot_combo_box_target[DeviceId(pluginId=LocalEmulator, isTemplate=false, identifier=path=/home/lucifer/.android/avd/Medium_Phone_API_30.avd)]" />
+  <component name="ExecutionTargetManager" SELECTED_TARGET="device_and_snapshot_combo_box_target[DeviceId(pluginId=PhysicalDevice, isTemplate=false, identifier=serial=41161FDJH004E3)]" />
   <component name="ExternalProjectsData">
     <projectState path="$PROJECT_DIR$">
       <ProjectState />
@@ -80,14 +89,19 @@
         <task path="$PROJECT_DIR$/app">
           <activation />
         </task>
-        <projects_view />
+        <projects_view>
+          <tree_state>
+            <expand />
+            <select />
+          </tree_state>
+        </projects_view>
       </state>
     </system>
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/.." />
   </component>
-  <component name="GradleScriptDefinitionsStorage" workingDir="$PROJECT_DIR$" gradleHome="$USER_HOME$/.gradle/wrapper/dists/gradle-8.9-bin/90cnw93cvbtalezasaz0blq0a/gradle-8.9" javaHome="$APPLICATION_HOME_DIR$/jbr" gradleVersion="8.9" />
+  <component name="GradleScriptDefinitionsStorage" workingDir="$PROJECT_DIR$" gradleHome="$USER_HOME$/.gradle/wrapper/dists/gradle-8.5-bin/5t9huq95ubn472n8rpzujfbqh/gradle-8.5" javaHome="$APPLICATION_HOME_DIR$/jbr" gradleVersion="8.5" />
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 8
 }</component>
@@ -96,22 +110,97 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Gradle.Frontend:app.executor&quot;: &quot;Debug&quot;,
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
-    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
-    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;go-backend&quot;,
-    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/lucifer/Projects/AndroControl/Frontend&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "AnalyzeApkAction.lastApkPath": "/home/lucifer/Projects/AndroControl/Frontend/app/build/outputs/apk/debug/app-debug.apk",
+    "Android App.AndroControl.app.executor": "Run",
+    "Gradle.Frontend:app.executor": "Debug",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "git-widget-placeholder": "go-backend",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "/home/lucifer/Projects/AndroControl/Frontend/app/build/outputs/apk/debug/app-debug.apk",
+    "settings.editor.selected.configurable": "AndroidSdkUpdater"
   }
-}</component>
-  <component name="RunManager">
+}]]></component>
+  <component name="RunManager" selected="Android App.AndroControl.app">
+    <configuration name="AndroControl.app" type="AndroidRunConfigurationType" factoryName="Android App" activateToolWindowBeforeRun="false">
+      <module name="AndroControl.app" />
+      <option name="ANDROID_RUN_CONFIGURATION_SCHEMA_VERSION" value="1" />
+      <option name="DEPLOY" value="true" />
+      <option name="DEPLOY_APK_FROM_BUNDLE" value="false" />
+      <option name="DEPLOY_AS_INSTANT" value="false" />
+      <option name="ARTIFACT_NAME" value="" />
+      <option name="PM_INSTALL_OPTIONS" value="" />
+      <option name="ALL_USERS" value="false" />
+      <option name="ALWAYS_INSTALL_WITH_PM" value="false" />
+      <option name="ALLOW_ASSUME_VERIFIED" value="false" />
+      <option name="CLEAR_APP_STORAGE" value="false" />
+      <option name="DYNAMIC_FEATURES_DISABLED_LIST" value="" />
+      <option name="ACTIVITY_EXTRA_FLAGS" value="" />
+      <option name="MODE" value="default_activity" />
+      <option name="RESTORE_ENABLED" value="false" />
+      <option name="RESTORE_FILE" value="" />
+      <option name="RESTORE_FRESH_INSTALL_ONLY" value="false" />
+      <option name="CLEAR_LOGCAT" value="false" />
+      <option name="SHOW_LOGCAT_AUTOMATICALLY" value="false" />
+      <option name="TARGET_SELECTION_MODE" value="DEVICE_AND_SNAPSHOT_COMBO_BOX" />
+      <option name="SELECTED_CLOUD_MATRIX_CONFIGURATION_ID" value="-1" />
+      <option name="SELECTED_CLOUD_MATRIX_PROJECT_ID" value="" />
+      <option name="DEBUGGER_TYPE" value="Auto" />
+      <Auto>
+        <option name="USE_JAVA_AWARE_DEBUGGER" value="false" />
+        <option name="SHOW_STATIC_VARS" value="true" />
+        <option name="WORKING_DIR" value="" />
+        <option name="TARGET_LOGGING_CHANNELS" value="lldb process:gdb-remote packets" />
+        <option name="SHOW_OPTIMIZED_WARNING" value="true" />
+        <option name="ATTACH_ON_WAIT_FOR_DEBUGGER" value="false" />
+        <option name="DEBUG_SANDBOX_SDK" value="false" />
+      </Auto>
+      <Hybrid>
+        <option name="USE_JAVA_AWARE_DEBUGGER" value="false" />
+        <option name="SHOW_STATIC_VARS" value="true" />
+        <option name="WORKING_DIR" value="" />
+        <option name="TARGET_LOGGING_CHANNELS" value="lldb process:gdb-remote packets" />
+        <option name="SHOW_OPTIMIZED_WARNING" value="true" />
+        <option name="ATTACH_ON_WAIT_FOR_DEBUGGER" value="false" />
+        <option name="DEBUG_SANDBOX_SDK" value="false" />
+      </Hybrid>
+      <Java>
+        <option name="ATTACH_ON_WAIT_FOR_DEBUGGER" value="false" />
+        <option name="DEBUG_SANDBOX_SDK" value="false" />
+      </Java>
+      <Native>
+        <option name="USE_JAVA_AWARE_DEBUGGER" value="false" />
+        <option name="SHOW_STATIC_VARS" value="true" />
+        <option name="WORKING_DIR" value="" />
+        <option name="TARGET_LOGGING_CHANNELS" value="lldb process:gdb-remote packets" />
+        <option name="SHOW_OPTIMIZED_WARNING" value="true" />
+        <option name="ATTACH_ON_WAIT_FOR_DEBUGGER" value="false" />
+        <option name="DEBUG_SANDBOX_SDK" value="false" />
+      </Native>
+      <Profilers>
+        <option name="ADVANCED_PROFILING_ENABLED" value="false" />
+        <option name="STARTUP_PROFILING_ENABLED" value="false" />
+        <option name="STARTUP_CPU_PROFILING_ENABLED" value="false" />
+        <option name="STARTUP_CPU_PROFILING_CONFIGURATION_NAME" value="Java/Kotlin Method Sample (legacy)" />
+        <option name="STARTUP_NATIVE_MEMORY_PROFILING_ENABLED" value="false" />
+        <option name="NATIVE_MEMORY_SAMPLE_RATE_BYTES" value="2048" />
+      </Profilers>
+      <option name="DEEP_LINK" value="" />
+      <option name="ACTIVITY" value="" />
+      <option name="ACTIVITY_CLASS" value="" />
+      <option name="SEARCH_ACTIVITY_IN_GLOBAL_SCOPE" value="false" />
+      <option name="SKIP_ACTIVITY_VALIDATION" value="false" />
+      <method v="2">
+        <option name="Android.Gradle.BeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
     <configuration name="Frontend:app" type="GradleRunConfiguration" factoryName="Gradle" nameIsGenerated="true">
       <ExternalSystemSettings>
         <option name="executionName" />
