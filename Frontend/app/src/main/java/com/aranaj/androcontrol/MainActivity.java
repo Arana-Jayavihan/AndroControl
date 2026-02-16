@@ -109,6 +109,12 @@ public class MainActivity extends AppCompatActivity implements
     private HeartbeatManager heartbeatManager;
     private Protocol protocol;
 
+    // Connection state
+    private volatile boolean isConnecting = false;
+    private final Object connectionLock = new Object();
+    private AlertDialog currentCertificateDialog = null;
+    private Runnable pendingCertificateReject = null; // To signal latch when dialog is force-dismissed
+
     // Haptic feedback
     private Vibrator vibrator;
 
@@ -502,6 +508,10 @@ public class MainActivity extends AppCompatActivity implements
                     vibrator.vibrate(durationMs);
                 }
             }
+        } catch (SecurityException e) {
+            // Permission not granted - disable vibration silently
+            Log.w(TAG, "VIBRATE permission not granted", e);
+            vibrator = null; // Disable future attempts
         } catch (Exception e) {
             Log.e(TAG, "Vibration failed", e);
         }
@@ -838,11 +848,52 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     /**
-     * Synchronous disconnect - used when switching servers.
-     * Does not show toast or clear last connected server.
+     * Performs network disconnect operations on background thread.
+     * Called at the start of executor block in connectToServer().
      */
-    private void disconnectFromServerSync() {
-        disconnectFromServerInternal(false);
+    private void disconnectPreviousServerOnBackground(Server oldServer, SSLSocket oldSocket,
+                                                       PrintWriter oldOut, BufferedReader oldIn) {
+        try {
+            // Stop heartbeat
+            if (heartbeatManager != null) {
+                heartbeatManager.stop();
+            }
+
+            // Disconnect protocol (this does network I/O)
+            if (protocol != null) {
+                try {
+                    protocol.disconnect();
+                } catch (Exception e) {
+                    Log.w(TAG, "Error disconnecting protocol", e);
+                }
+            }
+
+            // Close socket (this does network I/O)
+            if (oldSocket != null) {
+                try {
+                    if (!oldSocket.isClosed()) {
+                        oldSocket.close();
+                    }
+                } catch (IOException e) {
+                    Log.w(TAG, "Error closing socket", e);
+                }
+            }
+
+            // Update UI on main thread
+            mainHandler.post(() -> {
+                updateStatusBar(false, null);
+                if (oldServer != null) {
+                    oldServer.setConnected(false);
+                    oldServer.clearAuthToken();
+                }
+                if (serverAdapter != null) {
+                    serverAdapter.notifyDataSetChanged();
+                }
+            });
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error during background disconnect", e);
+        }
     }
 
     /**
@@ -851,6 +902,10 @@ public class MainActivity extends AppCompatActivity implements
      */
     private void disconnectFromServerInternal(boolean showNotification) {
         try {
+            synchronized (connectionLock) {
+                isConnecting = false;
+            }
+
             if (protocol != null) {
                 protocol.disconnect();
             }
@@ -867,6 +922,9 @@ public class MainActivity extends AppCompatActivity implements
             // Update UI on main thread
             final Server disconnectedServer = currentServer;
             mainHandler.post(() -> {
+                // Dismiss any certificate dialog and signal its callback
+                dismissCurrentCertificateDialog();
+
                 updateStatusBar(false, null);
                 if (disconnectedServer != null) {
                     disconnectedServer.setConnected(false);
@@ -885,13 +943,45 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     private void connectToServer(Server server) {
-        // Disconnect from any existing server first
-        if (currentServer != null && currentServer.isConnected()) {
-            Log.d(TAG, "Disconnecting from current server before connecting to new one");
-            disconnectFromServerSync();
+        // Capture previous connection state BEFORE entering synchronized block
+        final Server previousServer;
+        final SSLSocket previousSocket;
+        final PrintWriter previousOut;
+        final BufferedReader previousIn;
+        final boolean needsDisconnect;
+
+        synchronized (connectionLock) {
+            // Cancel any in-progress connection (only UI operations, no network I/O)
+            if (isConnecting) {
+                Log.d(TAG, "Cancelling in-progress connection");
+                // Only dismiss dialog - don't close socket on main thread
+                dismissCurrentCertificateDialog();
+            }
+
+            // Capture previous connection state for background disconnect
+            if (currentServer != null && currentServer.isConnected()) {
+                Log.d(TAG, "Will disconnect from current server on background thread");
+                previousServer = currentServer;
+                previousSocket = socket;
+                previousOut = out;
+                previousIn = in;
+                needsDisconnect = true;
+                // Clear references so new connection can use them
+                socket = null;
+                out = null;
+                in = null;
+            } else {
+                previousServer = null;
+                previousSocket = socket;
+                previousOut = null;
+                previousIn = null;
+                needsDisconnect = false;
+            }
+
+            isConnecting = true;
+            currentServer = server;
         }
 
-        currentServer = server;
         serverIp = server.getIpAddress();
         serverPort = server.getPort();
 
@@ -914,16 +1004,42 @@ public class MainActivity extends AppCompatActivity implements
 
         executorService.execute(() -> {
             try {
+                // Disconnect from previous server first (now on background thread - safe!)
+                if (needsDisconnect) {
+                    disconnectPreviousServerOnBackground(previousServer, previousSocket, previousOut, previousIn);
+                } else if (previousSocket != null && !previousSocket.isClosed()) {
+                    // Close any leftover socket
+                    try {
+                        previousSocket.close();
+                    } catch (IOException e) {
+                        Log.w(TAG, "Error closing old socket", e);
+                    }
+                }
+
+                // Check if this connection was cancelled
+                synchronized (connectionLock) {
+                    if (!isConnecting || currentServer != server) {
+                        Log.d(TAG, "Connection cancelled before start");
+                        return;
+                    }
+                }
+
                 // Reset protocol state before new connection
                 protocol.reset();
-                heartbeatManager.stop();
-
-                if (socket != null && !socket.isClosed()) {
-                    socket.close();
-                }
 
                 socket = tlsHelper.createSocket(serverIp, serverPort);
                 socket.startHandshake();
+
+                // Check again if cancelled during handshake
+                synchronized (connectionLock) {
+                    if (!isConnecting || currentServer != server) {
+                        Log.d(TAG, "Connection cancelled during handshake");
+                        if (socket != null && !socket.isClosed()) {
+                            socket.close();
+                        }
+                        return;
+                    }
+                }
 
                 out = new PrintWriter(socket.getOutputStream(), true);
                 in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
@@ -932,6 +1048,11 @@ public class MainActivity extends AppCompatActivity implements
 
                 char[] token = server.getAuthTokenChars();
                 if (token == null || token.length == 0) {
+                    synchronized (connectionLock) {
+                        if (currentServer == server) {
+                            isConnecting = false;
+                        }
+                    }
                     mainHandler.post(() -> {
                         Toast.makeText(this, "No auth token configured", Toast.LENGTH_SHORT).show();
                         showTokenInputDialog(server);
@@ -942,6 +1063,11 @@ public class MainActivity extends AppCompatActivity implements
 
                 // Note: authenticate() clears the token array after use
                 if (!protocol.authenticate(token)) {
+                    synchronized (connectionLock) {
+                        if (currentServer == server) {
+                            isConnecting = false;
+                        }
+                    }
                     mainHandler.post(() -> {
                         Toast.makeText(this, "Authentication failed", Toast.LENGTH_LONG).show();
                         server.setConnected(false);
@@ -951,27 +1077,117 @@ public class MainActivity extends AppCompatActivity implements
                     return;
                 }
 
+                // Final check before completing connection
+                synchronized (connectionLock) {
+                    if (!isConnecting || currentServer != server) {
+                        Log.d(TAG, "Connection cancelled before completion");
+                        if (socket != null && !socket.isClosed()) {
+                            socket.close();
+                        }
+                        return;
+                    }
+                }
+
                 protocol.start();
                 heartbeatManager.setWriter(out);
                 heartbeatManager.start();
 
+                synchronized (connectionLock) {
+                    if (currentServer == server) {
+                        isConnecting = false;
+                    }
+                }
+
                 mainHandler.post(() -> {
-                    updateStatusBar(true, server.getName());
-                    Toast.makeText(this, "Connected to " + server.getName(), Toast.LENGTH_SHORT).show();
-                    server.setConnected(true);
-                    serverManager.setLastConnectedServer(server.getId());
-                    serverAdapter.notifyDataSetChanged();
+                    // Only update UI if this is still the current server
+                    if (currentServer == server) {
+                        updateStatusBar(true, server.getName());
+                        Toast.makeText(this, "Connected to " + server.getName(), Toast.LENGTH_SHORT).show();
+                        server.setConnected(true);
+                        serverManager.setLastConnectedServer(server.getId());
+                        serverAdapter.notifyDataSetChanged();
+                    }
                 });
 
             } catch (IOException | NoSuchAlgorithmException | KeyManagementException e) {
+                // Only reset isConnecting if this is still the current connection attempt
+                synchronized (connectionLock) {
+                    if (currentServer == server) {
+                        isConnecting = false;
+                    }
+                }
                 String errorMsg = getConnectionErrorMessage(e);
                 mainHandler.post(() -> {
-                    Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show();
+                    if (!isFinishing() && !isDestroyed()) {
+                        Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show();
+                    }
+                    server.setConnected(false);
+                    serverAdapter.notifyDataSetChanged();
+                });
+            } catch (Exception e) {
+                // Only reset isConnecting if this is still the current connection attempt
+                synchronized (connectionLock) {
+                    if (currentServer == server) {
+                        isConnecting = false;
+                    }
+                }
+                // Catch any other exceptions (e.g., security exceptions during TLS handshake)
+                Log.e(TAG, "Unexpected error during connection", e);
+                mainHandler.post(() -> {
+                    if (!isFinishing() && !isDestroyed()) {
+                        Toast.makeText(this, "Connection failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    }
                     server.setConnected(false);
                     serverAdapter.notifyDataSetChanged();
                 });
             }
         });
+    }
+
+    /**
+     * Cancels any in-progress connection attempt.
+     * NOTE: This must be safe to call from the main thread.
+     * Network operations (socket.close) happen in the executor when it detects cancellation.
+     */
+    private void cancelCurrentConnection() {
+        // Signal the certificate latch BEFORE dismissing the dialog
+        // This unblocks the TLS handshake thread so it can clean up
+        if (pendingCertificateReject != null) {
+            Log.d(TAG, "Signaling pending certificate reject");
+            try {
+                new Thread(pendingCertificateReject).start();
+            } catch (Exception e) {
+                Log.e(TAG, "Error signaling certificate reject", e);
+            }
+            pendingCertificateReject = null;
+        }
+
+        // Dismiss any certificate dialog
+        if (currentCertificateDialog != null) {
+            try {
+                if (currentCertificateDialog.isShowing()) {
+                    currentCertificateDialog.dismiss();
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error dismissing certificate dialog", e);
+            }
+            currentCertificateDialog = null;
+        }
+
+        // NOTE: Don't close socket here - it's network I/O and would crash on main thread.
+        // The executor will detect currentServer != server and close it there.
+
+        // Reset protocol state (no network I/O, just clears state)
+        if (protocol != null) {
+            protocol.reset();
+        }
+        if (heartbeatManager != null) {
+            heartbeatManager.stop();
+        }
+
+        out = null;
+        in = null;
+        isConnecting = false;
     }
 
     private String getConnectionErrorMessage(Exception e) {
@@ -999,21 +1215,55 @@ public class MainActivity extends AppCompatActivity implements
     private void showCertificateConfirmationDialog(String fingerprint, Server server,
                                                     Runnable onConfirm, Runnable onReject,
                                                     boolean isMismatch) {
-        new AlertDialog.Builder(this)
-                .setTitle("Verify Server Certificate")
-                .setMessage("Connecting to " + server.getName() + " for the first time.\n\n" +
-                        "Certificate fingerprint (SHA-256):\n\n" +
-                        formatFingerprintForDisplay(fingerprint) + "\n\n" +
-                        "Verify this fingerprint matches the one shown on the server " +
-                        "before accepting.")
-                .setPositiveButton("Accept", (dialog, which) -> {
-                    executorService.execute(onConfirm);
-                })
-                .setNegativeButton("Reject", (dialog, which) -> {
-                    executorService.execute(onReject);
-                })
-                .setCancelable(false)
-                .show();
+        // Check if activity is still valid for showing dialog
+        if (isFinishing() || isDestroyed()) {
+            Log.w(TAG, "Activity not valid for certificate dialog, rejecting");
+            safeRunCallback(onReject);
+            return;
+        }
+
+        // Cancel any existing certificate dialog and its pending callback
+        dismissCurrentCertificateDialog();
+
+        // Check if this connection is still valid
+        synchronized (connectionLock) {
+            if (!isConnecting || currentServer != server) {
+                Log.w(TAG, "Connection no longer valid for certificate dialog");
+                safeRunCallback(onReject);
+                return;
+            }
+        }
+
+        // Store reject callback so we can signal it if dialog is force-dismissed
+        pendingCertificateReject = onReject;
+
+        try {
+            currentCertificateDialog = new AlertDialog.Builder(this)
+                    .setTitle("Verify Server Certificate")
+                    .setMessage("Connecting to " + server.getName() + " for the first time.\n\n" +
+                            "Certificate fingerprint (SHA-256):\n\n" +
+                            formatFingerprintForDisplay(fingerprint) + "\n\n" +
+                            "Verify this fingerprint matches the one shown on the server " +
+                            "before accepting.")
+                    .setPositiveButton("Accept", (dialog, which) -> {
+                        pendingCertificateReject = null; // Clear so it won't be called on dismiss
+                        currentCertificateDialog = null;
+                        safeRunCallback(onConfirm);
+                    })
+                    .setNegativeButton("Reject", (dialog, which) -> {
+                        pendingCertificateReject = null; // Clear so it won't be called twice
+                        currentCertificateDialog = null;
+                        safeRunCallback(onReject);
+                    })
+                    .setCancelable(false)
+                    .create();
+            currentCertificateDialog.show();
+        } catch (Exception e) {
+            Log.e(TAG, "Error showing certificate dialog", e);
+            pendingCertificateReject = null;
+            currentCertificateDialog = null;
+            safeRunCallback(onReject);
+        }
     }
 
     /**
@@ -1021,27 +1271,94 @@ public class MainActivity extends AppCompatActivity implements
      */
     private void showCertificateMismatchDialog(String expectedFingerprint, String actualFingerprint,
                                                 Server server, Runnable onAcceptNew, Runnable onReject) {
-        new AlertDialog.Builder(this)
-                .setTitle("Certificate Warning")
-                .setIcon(android.R.drawable.ic_dialog_alert)
-                .setMessage("WARNING: The certificate for " + server.getName() + " has changed!\n\n" +
-                        "This could indicate:\n" +
-                        "• A man-in-the-middle attack\n" +
-                        "• Server certificate was regenerated\n" +
-                        "• You're connecting to a different server\n\n" +
-                        "Expected fingerprint:\n" +
-                        formatFingerprintForDisplay(expectedFingerprint) + "\n\n" +
-                        "Current fingerprint:\n" +
-                        formatFingerprintForDisplay(actualFingerprint) + "\n\n" +
-                        "If you did NOT regenerate the server certificate, REJECT this connection.")
-                .setPositiveButton("Accept New Certificate", (dialog, which) -> {
-                    executorService.execute(onAcceptNew);
-                })
-                .setNegativeButton("Reject", (dialog, which) -> {
-                    executorService.execute(onReject);
-                })
-                .setCancelable(false)
-                .show();
+        // Check if activity is still valid for showing dialog
+        if (isFinishing() || isDestroyed()) {
+            Log.w(TAG, "Activity not valid for certificate mismatch dialog, rejecting");
+            safeRunCallback(onReject);
+            return;
+        }
+
+        // Cancel any existing certificate dialog and its pending callback
+        dismissCurrentCertificateDialog();
+
+        // Check if this connection is still valid
+        synchronized (connectionLock) {
+            if (!isConnecting || currentServer != server) {
+                Log.w(TAG, "Connection no longer valid for certificate mismatch dialog");
+                safeRunCallback(onReject);
+                return;
+            }
+        }
+
+        // Store reject callback so we can signal it if dialog is force-dismissed
+        pendingCertificateReject = onReject;
+
+        try {
+            currentCertificateDialog = new AlertDialog.Builder(this)
+                    .setTitle("Certificate Warning")
+                    .setIcon(android.R.drawable.ic_dialog_alert)
+                    .setMessage("WARNING: The certificate for " + server.getName() + " has changed!\n\n" +
+                            "This could indicate:\n" +
+                            "• A man-in-the-middle attack\n" +
+                            "• Server certificate was regenerated\n" +
+                            "• You're connecting to a different server\n\n" +
+                            "Expected fingerprint:\n" +
+                            formatFingerprintForDisplay(expectedFingerprint) + "\n\n" +
+                            "Current fingerprint:\n" +
+                            formatFingerprintForDisplay(actualFingerprint) + "\n\n" +
+                            "If you did NOT regenerate the server certificate, REJECT this connection.")
+                    .setPositiveButton("Accept New Certificate", (dialog, which) -> {
+                        pendingCertificateReject = null;
+                        currentCertificateDialog = null;
+                        safeRunCallback(onAcceptNew);
+                    })
+                    .setNegativeButton("Reject", (dialog, which) -> {
+                        pendingCertificateReject = null;
+                        currentCertificateDialog = null;
+                        safeRunCallback(onReject);
+                    })
+                    .setCancelable(false)
+                    .create();
+            currentCertificateDialog.show();
+        } catch (Exception e) {
+            Log.e(TAG, "Error showing certificate mismatch dialog", e);
+            pendingCertificateReject = null;
+            currentCertificateDialog = null;
+            safeRunCallback(onReject);
+        }
+    }
+
+    /**
+     * Safely runs a callback on a new thread.
+     */
+    private void safeRunCallback(Runnable callback) {
+        if (callback != null) {
+            try {
+                new Thread(callback).start();
+            } catch (Exception e) {
+                Log.e(TAG, "Error running callback", e);
+            }
+        }
+    }
+
+    /**
+     * Dismisses the current certificate dialog and signals any pending reject callback.
+     */
+    private void dismissCurrentCertificateDialog() {
+        if (pendingCertificateReject != null) {
+            safeRunCallback(pendingCertificateReject);
+            pendingCertificateReject = null;
+        }
+        if (currentCertificateDialog != null) {
+            try {
+                if (currentCertificateDialog.isShowing()) {
+                    currentCertificateDialog.dismiss();
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error dismissing dialog", e);
+            }
+            currentCertificateDialog = null;
+        }
     }
 
     /**
@@ -1195,7 +1512,8 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     protected void onResume() {
         super.onResume();
-        if (currentServer != null && (socket == null || socket.isClosed())) {
+        // Only auto-reconnect if not already connecting and socket is closed
+        if (!isConnecting && currentServer != null && (socket == null || socket.isClosed())) {
             char[] token = secureStorage.getTokenAsChars(currentServer.getId());
             if (token != null) {
                 currentServer.setAuthTokenChars(token);
@@ -1214,6 +1532,13 @@ public class MainActivity extends AppCompatActivity implements
 
     private void handleQRCodeResult(String qrContent) {
         Log.d(TAG, "handleQRCodeResult called with: " + qrContent);
+
+        // Check if activity is still valid
+        if (isFinishing() || isDestroyed()) {
+            Log.w(TAG, "Activity not valid for QR handling");
+            return;
+        }
+
         try {
             JSONObject json = new JSONObject(qrContent);
             Log.d(TAG, "JSON parsed successfully");
@@ -1235,6 +1560,7 @@ public class MainActivity extends AppCompatActivity implements
             if (existingServer != null) {
                 // Server exists - offer to connect
                 Toast.makeText(this, "Server already exists", Toast.LENGTH_SHORT).show();
+                if (isFinishing() || isDestroyed()) return;
                 new AlertDialog.Builder(this)
                         .setTitle("Server Exists")
                         .setMessage("Server \"" + existingServer.getName() + "\" (" + ip + ":" + port + ") already exists. Connect now?")
@@ -1267,6 +1593,7 @@ public class MainActivity extends AppCompatActivity implements
             Toast.makeText(this, "Server added: " + name, Toast.LENGTH_SHORT).show();
 
             // Ask if user wants to connect immediately
+            if (isFinishing() || isDestroyed()) return;
             new AlertDialog.Builder(this)
                     .setTitle("Connect Now?")
                     .setMessage("Server \"" + name + "\" has been added. Connect now?")
@@ -1302,6 +1629,14 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     protected void onDestroy() {
         super.onDestroy();
+
+        // Dismiss any certificate dialog and signal its callback to unblock TLS threads
+        dismissCurrentCertificateDialog();
+
+        synchronized (connectionLock) {
+            isConnecting = false;
+        }
+
         heartbeatManager.shutdown();
         protocol.shutdown();
         disconnectFromServer();

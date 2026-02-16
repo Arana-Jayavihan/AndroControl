@@ -112,6 +112,7 @@ public class HeartbeatManager {
      */
     public void stop() {
         running.set(false);
+        writer = null; // Clear writer to prevent any pending tasks from using it
         if (heartbeatThread != null) {
             heartbeatThread.interrupt();
             heartbeatThread = null;
@@ -122,15 +123,22 @@ public class HeartbeatManager {
      * Sends a PING message.
      */
     private void sendPing() {
-        if (writer == null) {
+        final PrintWriter w = writer; // Capture reference for thread safety
+        if (w == null) {
             return;
         }
 
         executor.execute(() -> {
             try {
+                // Double-check writer is still valid
+                if (!running.get() || w.checkError()) {
+                    return;
+                }
                 waitingForPong.set(true);
-                writer.println("PING");
-                writer.flush();
+                synchronized (w) {
+                    w.println("PING");
+                    w.flush();
+                }
                 Log.d(TAG, "Sent PING");
             } catch (Exception e) {
                 Log.e(TAG, "Failed to send PING", e);
