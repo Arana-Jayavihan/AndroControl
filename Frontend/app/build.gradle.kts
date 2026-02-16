@@ -8,7 +8,7 @@ android {
 
     defaultConfig {
         applicationId = "com.aranaj.androcontrol"
-        minSdk = 21
+        minSdk = 23  // Requires Android 6.0+ for secure storage (AES-GCM via Android Keystore)
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"

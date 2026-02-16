@@ -191,8 +191,11 @@ public class MainActivity extends AppCompatActivity implements
             @Override
             public void onConnect(int position) {
                 Server server = serverManager.getServers().get(position);
-                String token = secureStorage.getToken(server.getId());
-                server.setAuthToken(token);
+                char[] token = secureStorage.getTokenAsChars(server.getId());
+                if (token != null) {
+                    server.setAuthTokenChars(token);
+                    SecureStorage.clearCharArray(token);
+                }
                 connectToServer(server);
                 // Close drawer when connecting
                 if (drawerLayout != null) {
@@ -221,8 +224,11 @@ public class MainActivity extends AppCompatActivity implements
 
         Server lastConnectedServer = serverManager.getLastConnectedServer();
         if (lastConnectedServer != null) {
-            String token = secureStorage.getToken(lastConnectedServer.getId());
-            lastConnectedServer.setAuthToken(token);
+            char[] token = secureStorage.getTokenAsChars(lastConnectedServer.getId());
+            if (token != null) {
+                lastConnectedServer.setAuthTokenChars(token);
+                SecureStorage.clearCharArray(token);
+            }
             connectToServer(lastConnectedServer);
         }
 
@@ -827,42 +833,84 @@ public class MainActivity extends AppCompatActivity implements
 
     private void disconnectFromServer() {
         executorService.execute(() -> {
-            try {
-                if (protocol != null) {
-                    protocol.disconnect();
-                }
-
-                heartbeatManager.stop();
-
-                if (socket != null && !socket.isClosed()) {
-                    socket.close();
-                }
-                socket = null;
-                out = null;
-                in = null;
-
-                mainHandler.post(() -> {
-                    updateStatusBar(false, null);
-                    if (currentServer != null) {
-                        currentServer.setConnected(false);
-                        currentServer = null;
-                        serverManager.clearLastConnectedServer();
-                        serverAdapter.notifyDataSetChanged();
-                    }
-                    Toast.makeText(this, "Disconnected from server", Toast.LENGTH_SHORT).show();
-                });
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+            disconnectFromServerInternal(true);
         });
     }
 
+    /**
+     * Synchronous disconnect - used when switching servers.
+     * Does not show toast or clear last connected server.
+     */
+    private void disconnectFromServerSync() {
+        disconnectFromServerInternal(false);
+    }
+
+    /**
+     * Internal disconnect implementation.
+     * @param showNotification Whether to show toast and clear last connected server
+     */
+    private void disconnectFromServerInternal(boolean showNotification) {
+        try {
+            if (protocol != null) {
+                protocol.disconnect();
+            }
+
+            heartbeatManager.stop();
+
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+            }
+            socket = null;
+            out = null;
+            in = null;
+
+            // Update UI on main thread
+            final Server disconnectedServer = currentServer;
+            mainHandler.post(() -> {
+                updateStatusBar(false, null);
+                if (disconnectedServer != null) {
+                    disconnectedServer.setConnected(false);
+                    disconnectedServer.clearAuthToken();
+                    serverAdapter.notifyDataSetChanged();
+                }
+                if (showNotification) {
+                    currentServer = null;
+                    serverManager.clearLastConnectedServer();
+                    Toast.makeText(this, "Disconnected from server", Toast.LENGTH_SHORT).show();
+                }
+            });
+        } catch (IOException e) {
+            Log.e(TAG, "Error during disconnect", e);
+        }
+    }
+
     private void connectToServer(Server server) {
+        // Disconnect from any existing server first
+        if (currentServer != null && currentServer.isConnected()) {
+            Log.d(TAG, "Disconnecting from current server before connecting to new one");
+            disconnectFromServerSync();
+        }
+
         currentServer = server;
         serverIp = server.getIpAddress();
         serverPort = server.getPort();
 
         tlsHelper = new TlsHelper(this, serverIp, serverPort);
+
+        // Set up TOFU confirmation callback
+        tlsHelper.setConfirmationCallback(new TlsHelper.TofuConfirmationCallback() {
+            @Override
+            public void onFirstUse(String fingerprint, Runnable onConfirm, Runnable onReject) {
+                mainHandler.post(() -> showCertificateConfirmationDialog(fingerprint, server, onConfirm, onReject, false));
+            }
+
+            @Override
+            public void onMismatch(String expectedFingerprint, String actualFingerprint,
+                                   Runnable onAcceptNew, Runnable onReject) {
+                mainHandler.post(() -> showCertificateMismatchDialog(expectedFingerprint, actualFingerprint,
+                        server, onAcceptNew, onReject));
+            }
+        });
 
         executorService.execute(() -> {
             try {
@@ -882,8 +930,8 @@ public class MainActivity extends AppCompatActivity implements
 
                 protocol.setStreams(out, in);
 
-                String token = server.getAuthToken();
-                if (token == null || token.isEmpty()) {
+                char[] token = server.getAuthTokenChars();
+                if (token == null || token.length == 0) {
                     mainHandler.post(() -> {
                         Toast.makeText(this, "No auth token configured", Toast.LENGTH_SHORT).show();
                         showTokenInputDialog(server);
@@ -892,6 +940,7 @@ public class MainActivity extends AppCompatActivity implements
                     return;
                 }
 
+                // Note: authenticate() clears the token array after use
                 if (!protocol.authenticate(token)) {
                     mainHandler.post(() -> {
                         Toast.makeText(this, "Authentication failed", Toast.LENGTH_LONG).show();
@@ -930,6 +979,9 @@ public class MainActivity extends AppCompatActivity implements
             if (e.getMessage() != null && e.getMessage().contains("fingerprint mismatch")) {
                 return "Certificate changed! Server may have been compromised.";
             }
+            if (e.getMessage() != null && e.getMessage().contains("User rejected")) {
+                return "Certificate verification cancelled.";
+            }
             return "TLS error: " + e.getMessage();
         }
         if (e instanceof java.net.ConnectException) {
@@ -939,6 +991,76 @@ public class MainActivity extends AppCompatActivity implements
             return "Connection timed out. Server may be offline.";
         }
         return "Connection failed: " + e.getMessage();
+    }
+
+    /**
+     * Shows a dialog for first-use certificate confirmation.
+     */
+    private void showCertificateConfirmationDialog(String fingerprint, Server server,
+                                                    Runnable onConfirm, Runnable onReject,
+                                                    boolean isMismatch) {
+        new AlertDialog.Builder(this)
+                .setTitle("Verify Server Certificate")
+                .setMessage("Connecting to " + server.getName() + " for the first time.\n\n" +
+                        "Certificate fingerprint (SHA-256):\n\n" +
+                        formatFingerprintForDisplay(fingerprint) + "\n\n" +
+                        "Verify this fingerprint matches the one shown on the server " +
+                        "before accepting.")
+                .setPositiveButton("Accept", (dialog, which) -> {
+                    executorService.execute(onConfirm);
+                })
+                .setNegativeButton("Reject", (dialog, which) -> {
+                    executorService.execute(onReject);
+                })
+                .setCancelable(false)
+                .show();
+    }
+
+    /**
+     * Shows a warning dialog when certificate doesn't match saved fingerprint.
+     */
+    private void showCertificateMismatchDialog(String expectedFingerprint, String actualFingerprint,
+                                                Server server, Runnable onAcceptNew, Runnable onReject) {
+        new AlertDialog.Builder(this)
+                .setTitle("Certificate Warning")
+                .setIcon(android.R.drawable.ic_dialog_alert)
+                .setMessage("WARNING: The certificate for " + server.getName() + " has changed!\n\n" +
+                        "This could indicate:\n" +
+                        "• A man-in-the-middle attack\n" +
+                        "• Server certificate was regenerated\n" +
+                        "• You're connecting to a different server\n\n" +
+                        "Expected fingerprint:\n" +
+                        formatFingerprintForDisplay(expectedFingerprint) + "\n\n" +
+                        "Current fingerprint:\n" +
+                        formatFingerprintForDisplay(actualFingerprint) + "\n\n" +
+                        "If you did NOT regenerate the server certificate, REJECT this connection.")
+                .setPositiveButton("Accept New Certificate", (dialog, which) -> {
+                    executorService.execute(onAcceptNew);
+                })
+                .setNegativeButton("Reject", (dialog, which) -> {
+                    executorService.execute(onReject);
+                })
+                .setCancelable(false)
+                .show();
+    }
+
+    /**
+     * Formats a fingerprint with line breaks for better readability.
+     */
+    private String formatFingerprintForDisplay(String fingerprint) {
+        if (fingerprint == null) return "";
+        // Split into groups of 4 pairs (8 characters + colons)
+        StringBuilder sb = new StringBuilder();
+        String[] parts = fingerprint.split(":");
+        for (int i = 0; i < parts.length; i++) {
+            if (i > 0 && i % 8 == 0) {
+                sb.append("\n");
+            } else if (i > 0) {
+                sb.append(":");
+            }
+            sb.append(parts[i]);
+        }
+        return sb.toString();
     }
 
     private void showTokenInputDialog(Server server) {
@@ -1074,8 +1196,11 @@ public class MainActivity extends AppCompatActivity implements
     protected void onResume() {
         super.onResume();
         if (currentServer != null && (socket == null || socket.isClosed())) {
-            String token = secureStorage.getToken(currentServer.getId());
-            currentServer.setAuthToken(token);
+            char[] token = secureStorage.getTokenAsChars(currentServer.getId());
+            if (token != null) {
+                currentServer.setAuthTokenChars(token);
+                SecureStorage.clearCharArray(token);
+            }
             connectToServer(currentServer);
         }
     }
@@ -1114,8 +1239,11 @@ public class MainActivity extends AppCompatActivity implements
                         .setTitle("Server Exists")
                         .setMessage("Server \"" + existingServer.getName() + "\" (" + ip + ":" + port + ") already exists. Connect now?")
                         .setPositiveButton("Connect", (dialog, which) -> {
-                            String existingToken = secureStorage.getToken(existingServer.getId());
-                            existingServer.setAuthToken(existingToken);
+                            char[] existingToken = secureStorage.getTokenAsChars(existingServer.getId());
+                            if (existingToken != null) {
+                                existingServer.setAuthTokenChars(existingToken);
+                                SecureStorage.clearCharArray(existingToken);
+                            }
                             connectToServer(existingServer);
                             if (drawerLayout != null) {
                                 drawerLayout.closeDrawer(GravityCompat.START);

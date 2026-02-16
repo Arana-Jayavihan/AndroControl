@@ -7,7 +7,8 @@ import (
 )
 
 const (
-	ProtocolVersion = "1.0"
+	ProtocolVersion    = "1.1"
+	MinSupportedVersion = "1.0"
 )
 
 // Error codes for NACK responses
@@ -93,11 +94,18 @@ func FormatVersionResponse(clientVersion string) string {
 	if clientVersion == ProtocolVersion {
 		return fmt.Sprintf("VERSION:%s:OK\n", ProtocolVersion)
 	}
+
 	// Check if versions are compatible (same major version)
 	clientParts := strings.Split(clientVersion, ".")
 	serverParts := strings.Split(ProtocolVersion, ".")
 
 	if len(clientParts) > 0 && len(serverParts) > 0 && clientParts[0] == serverParts[0] {
+		return fmt.Sprintf("VERSION:%s:COMPATIBLE\n", ProtocolVersion)
+	}
+
+	// Check if client version is at least the minimum supported
+	minParts := strings.Split(MinSupportedVersion, ".")
+	if len(clientParts) > 0 && len(minParts) > 0 && clientParts[0] >= minParts[0] {
 		return fmt.Sprintf("VERSION:%s:COMPATIBLE\n", ProtocolVersion)
 	}
 

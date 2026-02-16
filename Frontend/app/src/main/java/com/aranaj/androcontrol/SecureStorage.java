@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
+import java.util.Arrays;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
@@ -20,7 +21,7 @@ import javax.crypto.spec.GCMParameterSpec;
 
 /**
  * Secure storage for sensitive data like authentication tokens.
- * Uses Android Keystore for encryption on API 23+, falls back to obfuscation on older versions.
+ * Uses Android Keystore for AES-GCM encryption. Requires Android 6.0+ (API 23).
  */
 public class SecureStorage {
     private static final String TAG = "SecureStorage";
@@ -30,27 +31,24 @@ public class SecureStorage {
     private static final String TRANSFORMATION = "AES/GCM/NoPadding";
     private static final int GCM_IV_LENGTH = 12;
     private static final int GCM_TAG_LENGTH = 128;
+    private static final int MINIMUM_API_LEVEL = Build.VERSION_CODES.M;
 
     private final Context context;
     private final SharedPreferences prefs;
 
     public SecureStorage(Context context) {
+        if (Build.VERSION.SDK_INT < MINIMUM_API_LEVEL) {
+            throw new SecurityException("Secure storage requires Android 6.0+ (API 23)");
+        }
         this.context = context;
         this.prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            ensureKeyExists();
-        }
+        ensureKeyExists();
     }
 
     /**
      * Ensures the encryption key exists in the Android Keystore.
      */
     private void ensureKeyExists() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return;
-        }
-
         try {
             KeyStore keyStore = KeyStore.getInstance(ANDROID_KEYSTORE);
             keyStore.load(null);
@@ -86,14 +84,9 @@ public class SecureStorage {
     }
 
     /**
-     * Encrypts data using Android Keystore.
+     * Encrypts data using Android Keystore with AES-GCM.
      */
     private String encrypt(String plaintext) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            // Fallback: simple obfuscation for older Android versions
-            return obfuscate(plaintext);
-        }
-
         try {
             SecretKey key = getKey();
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
@@ -109,17 +102,19 @@ public class SecureStorage {
 
             return Base64.encodeToString(combined, Base64.NO_WRAP);
         } catch (Exception e) {
-            Log.e(TAG, "Encryption failed, using fallback", e);
-            return obfuscate(plaintext);
+            Log.e(TAG, "Encryption failed", e);
+            throw new SecurityException("Failed to encrypt data", e);
         }
     }
 
     /**
-     * Decrypts data using Android Keystore.
+     * Decrypts data using Android Keystore with AES-GCM.
      */
     private String decrypt(String encrypted) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return deobfuscate(encrypted);
+        // Handle legacy obfuscated data by removing it (force re-authentication)
+        if (encrypted.startsWith("OBF:")) {
+            Log.w(TAG, "Found legacy obfuscated data, removing (insecure)");
+            return null;
         }
 
         try {
@@ -139,47 +134,7 @@ public class SecureStorage {
             byte[] plaintext = cipher.doFinal(ciphertext);
             return new String(plaintext, StandardCharsets.UTF_8);
         } catch (Exception e) {
-            Log.e(TAG, "Decryption failed, trying fallback", e);
-            return deobfuscate(encrypted);
-        }
-    }
-
-    /**
-     * Simple obfuscation for older Android versions.
-     * Not cryptographically secure, but provides some protection.
-     */
-    private String obfuscate(String plaintext) {
-        byte[] bytes = plaintext.getBytes(StandardCharsets.UTF_8);
-        byte[] obfuscated = new byte[bytes.length];
-        byte key = (byte) (context.getPackageName().hashCode() & 0xFF);
-
-        for (int i = 0; i < bytes.length; i++) {
-            obfuscated[i] = (byte) (bytes[i] ^ key ^ i);
-        }
-
-        return "OBF:" + Base64.encodeToString(obfuscated, Base64.NO_WRAP);
-    }
-
-    /**
-     * Deobfuscates data.
-     */
-    private String deobfuscate(String obfuscated) {
-        if (!obfuscated.startsWith("OBF:")) {
-            return obfuscated; // Not obfuscated, return as-is
-        }
-
-        try {
-            byte[] bytes = Base64.decode(obfuscated.substring(4), Base64.NO_WRAP);
-            byte[] deobfuscated = new byte[bytes.length];
-            byte key = (byte) (context.getPackageName().hashCode() & 0xFF);
-
-            for (int i = 0; i < bytes.length; i++) {
-                deobfuscated[i] = (byte) (bytes[i] ^ key ^ i);
-            }
-
-            return new String(deobfuscated, StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            Log.e(TAG, "Deobfuscation failed", e);
+            Log.e(TAG, "Decryption failed", e);
             return null;
         }
     }
@@ -231,5 +186,85 @@ public class SecureStorage {
     public void clearAll() {
         prefs.edit().clear().apply();
         Log.d(TAG, "Cleared all stored tokens");
+    }
+
+    /**
+     * Retrieves an authentication token as a char[] for secure memory handling.
+     * The caller is responsible for clearing the array after use with clearCharArray().
+     */
+    public char[] getTokenAsChars(String serverId) {
+        String token = getToken(serverId);
+        if (token == null) {
+            return null;
+        }
+        char[] result = token.toCharArray();
+        // Clear the String reference - note: String is immutable so this is limited
+        // but the char[] can be explicitly cleared after use
+        return result;
+    }
+
+    /**
+     * Saves a token from a char[] and then clears the source array.
+     */
+    public void saveTokenFromChars(String serverId, char[] token) {
+        if (token == null || token.length == 0) {
+            prefs.edit().remove("token_" + serverId).apply();
+            return;
+        }
+        try {
+            String tokenStr = new String(token);
+            saveToken(serverId, tokenStr);
+        } finally {
+            clearCharArray(token);
+        }
+    }
+
+    /**
+     * Securely clears a char array by overwriting with zeros.
+     * Call this immediately after using token data.
+     */
+    public static void clearCharArray(char[] array) {
+        if (array != null) {
+            Arrays.fill(array, '\0');
+        }
+    }
+
+    /**
+     * Securely clears a byte array by overwriting with zeros.
+     */
+    public static void clearByteArray(byte[] array) {
+        if (array != null) {
+            Arrays.fill(array, (byte) 0);
+        }
+    }
+
+    /**
+     * Encrypts and stores arbitrary data (for fingerprints, server configs, etc.)
+     */
+    public void saveEncrypted(String key, String value) {
+        if (value == null || value.isEmpty()) {
+            prefs.edit().remove(key).apply();
+            return;
+        }
+        String encrypted = encrypt(value);
+        prefs.edit().putString(key, encrypted).apply();
+    }
+
+    /**
+     * Retrieves and decrypts arbitrary data.
+     */
+    public String getEncrypted(String key) {
+        String encrypted = prefs.getString(key, null);
+        if (encrypted == null) {
+            return null;
+        }
+        return decrypt(encrypted);
+    }
+
+    /**
+     * Removes encrypted data by key.
+     */
+    public void removeEncrypted(String key) {
+        prefs.edit().remove(key).apply();
     }
 }

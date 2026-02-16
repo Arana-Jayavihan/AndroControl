@@ -128,12 +128,16 @@ func PrintQRCode(name string, port int, token string) {
 	if err != nil {
 		fmt.Printf("Failed to generate QR code: %v\n", err)
 		// Fall back to just printing the info
-		fmt.Println("\n=== Connection Info ===")
-		fmt.Printf("Server: %s\n", name)
-		fmt.Printf("IP:     %s\n", ip)
-		fmt.Printf("Port:   %d\n", port)
-		fmt.Printf("Token:  %s\n", token)
-		fmt.Println("=======================")
+		fmt.Println()
+		fmt.Println("╔══════════════════════════════════════════════════════════════════╗")
+		fmt.Println("║                       CONNECTION INFO                            ║")
+		fmt.Println("╠══════════════════════════════════════════════════════════════════╣")
+		fmt.Printf("║  Server: %-56s  ║\n", name)
+		fmt.Printf("║  IP:     %-56s  ║\n", ip)
+		fmt.Printf("║  Port:   %-56d  ║\n", port)
+		fmt.Printf("║  Token:  %-56s  ║\n", token)
+		fmt.Println("╚══════════════════════════════════════════════════════════════════╝")
+		fmt.Println()
 		return
 	}
 

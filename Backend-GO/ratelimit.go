@@ -90,64 +90,67 @@ func (rl *RateLimiter) Reset() {
 	rl.lastRefill = time.Now()
 }
 
-// ClientRateLimiters manages rate limiters per client
+// ClientRateLimiters manages rate limiters per client using sync.Map
+// to avoid TOCTOU race conditions in GetLimiter
 type ClientRateLimiters struct {
-	mu       sync.RWMutex
-	limiters map[string]*RateLimiter
+	limiters sync.Map // map[string]*RateLimiter
 }
 
 // NewClientRateLimiters creates a new client rate limiter manager
 func NewClientRateLimiters() *ClientRateLimiters {
-	return &ClientRateLimiters{
-		limiters: make(map[string]*RateLimiter),
-	}
+	return &ClientRateLimiters{}
 }
 
 // GetLimiter gets or creates a rate limiter for a client
+// Uses sync.Map.LoadOrStore to atomically get-or-create without race conditions
 func (crl *ClientRateLimiters) GetLimiter(clientID string) *RateLimiter {
-	crl.mu.RLock()
-	limiter, exists := crl.limiters[clientID]
-	crl.mu.RUnlock()
-
-	if exists {
-		return limiter
+	// Try to load existing limiter first
+	if limiter, ok := crl.limiters.Load(clientID); ok {
+		return limiter.(*RateLimiter)
 	}
 
-	crl.mu.Lock()
-	defer crl.mu.Unlock()
-
-	// Double-check after acquiring write lock
-	if limiter, exists = crl.limiters[clientID]; exists {
-		return limiter
+	// Create new limiter and try to store it atomically
+	newLimiter := NewDefaultRateLimiter()
+	actual, loaded := crl.limiters.LoadOrStore(clientID, newLimiter)
+	if loaded {
+		// Another goroutine stored a limiter first, use that one
+		return actual.(*RateLimiter)
 	}
-
-	limiter = NewDefaultRateLimiter()
-	crl.limiters[clientID] = limiter
-	return limiter
+	// We stored our new limiter
+	return newLimiter
 }
 
 // RemoveLimiter removes a rate limiter for a client
 func (crl *ClientRateLimiters) RemoveLimiter(clientID string) {
-	crl.mu.Lock()
-	defer crl.mu.Unlock()
-	delete(crl.limiters, clientID)
+	crl.limiters.Delete(clientID)
 }
 
 // Cleanup removes stale limiters (not accessed in the given duration)
 func (crl *ClientRateLimiters) Cleanup(maxAge time.Duration) int {
-	crl.mu.Lock()
-	defer crl.mu.Unlock()
-
 	threshold := time.Now().Add(-maxAge)
 	removed := 0
-	for id, limiter := range crl.limiters {
+
+	// Collect keys to delete (can't delete during Range)
+	var toDelete []string
+
+	crl.limiters.Range(func(key, value interface{}) bool {
+		limiter := value.(*RateLimiter)
 		limiter.mu.Lock()
-		if limiter.lastRefill.Before(threshold) {
-			delete(crl.limiters, id)
-			removed++
-		}
+		isStale := limiter.lastRefill.Before(threshold)
 		limiter.mu.Unlock()
+
+		if isStale {
+			toDelete = append(toDelete, key.(string))
+		}
+		return true
+	})
+
+	// Delete stale limiters
+	for _, key := range toDelete {
+		crl.limiters.Delete(key)
+		removed++
 	}
+
 	return removed
 }
 
@@ -174,7 +177,10 @@ func (crl *ClientRateLimiters) StartCleanup(interval, maxAge time.Duration, stop
 
 // Count returns the number of active rate limiters
 func (crl *ClientRateLimiters) Count() int {
-	crl.mu.RLock()
-	defer crl.mu.RUnlock()
-	return len(crl.limiters)
+	count := 0
+	crl.limiters.Range(func(_, _ interface{}) bool {
+		count++
+		return true
+	})
+	return count
 }

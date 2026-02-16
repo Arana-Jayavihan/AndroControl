@@ -34,6 +34,7 @@ var (
 	// Global managers
 	connManager    *ConnectionManager
 	authManager    *AuthManager
+	sessionManager *SessionManager
 	rateLimiters   *ClientRateLimiters
 	tlsConfig      *TLSConfig
 )
@@ -53,6 +54,7 @@ func init() {
 	// Initialize managers
 	connManager = NewConnectionManager()
 	authManager = NewAuthManager()
+	sessionManager = NewSessionManager()
 	rateLimiters = NewClientRateLimiters()
 	tlsConfig = NewTLSConfig()
 }
@@ -375,36 +377,48 @@ func sendResponse(conn net.Conn, response string) error {
 }
 
 // authenticateClient handles the authentication handshake
-func authenticateClient(conn net.Conn, reader *bufio.Reader) bool {
+// Returns the session token on success, empty string on failure
+func authenticateClient(conn net.Conn, reader *bufio.Reader) string {
+	clientID := conn.RemoteAddr().String()
+
 	// Set auth timeout
 	conn.SetReadDeadline(time.Now().Add(AuthTimeoutDuration))
 
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		log.Printf("Auth timeout or read error from %s: %v", conn.RemoteAddr(), err)
+		log.Printf("Auth timeout or read error from %s: %v", clientID, err)
 		sendResponse(conn, AuthTimeout.String()+"\n")
-		return false
+		return ""
 	}
 
 	token, err := ParseAuthMessage(strings.TrimSpace(line))
 	if err != nil {
-		log.Printf("Invalid auth format from %s: %v", conn.RemoteAddr(), err)
+		log.Printf("Invalid auth format from %s: %v", clientID, err)
 		sendResponse(conn, AuthInvalidFormat.String()+"\n")
-		return false
+		return ""
 	}
 
 	if !authManager.Validate(token) {
-		log.Printf("Auth failed from %s", conn.RemoteAddr())
+		log.Printf("Auth failed from %s", clientID)
 		sendResponse(conn, AuthFailed.String()+"\n")
-		return false
+		return ""
 	}
 
-	log.Printf("Auth successful from %s", conn.RemoteAddr())
-	sendResponse(conn, AuthSuccess.String()+"\n")
+	// Create session for this client
+	session, err := sessionManager.CreateSession(clientID)
+	if err != nil {
+		log.Printf("Failed to create session for %s: %v", clientID, err)
+		sendResponse(conn, "AUTH:ERROR\n")
+		return ""
+	}
+
+	log.Printf("Auth successful from %s (session created)", clientID)
+	// Send AUTH:OK with session token for v1.1+ clients
+	sendResponse(conn, fmt.Sprintf("AUTH:OK:%s\n", session.Token))
 
 	// Clear read deadline
 	conn.SetReadDeadline(time.Time{})
-	return true
+	return session.Token
 }
 
 // handleCommand processes a single command and returns a response
@@ -429,7 +443,7 @@ func handleCommand(msg *Message, clientID string) *Response {
 			if errX != nil || errY != nil {
 				return NewNACKResponse(msg.SeqID, ErrCodeValidation)
 			}
-			if err := ValidateMovement(x, y); err != nil {
+			if err := ValidateMovementSafe(x, y); err != nil {
 				return NewNACKResponse(msg.SeqID, ErrCodeValidation)
 			}
 			safeMouseMove(int32(x), int32(y))
@@ -454,7 +468,7 @@ func handleCommand(msg *Message, clientID string) *Response {
 		safeMouseWheel(int32(-amount))
 
 	case "T":
-		text, err := SanitizeText(msg.Payload)
+		text, err := SanitizeTextStrict(msg.Payload)
 		if err != nil {
 			return NewNACKResponse(msg.SeqID, ErrCodeValidation)
 		}
@@ -511,6 +525,9 @@ func handleCommand(msg *Message, clientID string) *Response {
 
 	case "COMBO":
 		// Key combination: COMBO:CTRL+C, COMBO:CTRL+SHIFT+S
+		if err := ValidateKeyCombo(msg.Payload); err != nil {
+			return NewNACKResponse(msg.SeqID, ErrCodeValidation)
+		}
 		if err := executeKeyCombo(msg.Payload); err != nil {
 			return NewNACKResponse(msg.SeqID, ErrCodeValidation)
 		}
@@ -558,18 +575,27 @@ func handleClient(conn net.Conn) {
 		conn.Close()
 		connManager.Release(clientAddr)
 		rateLimiters.RemoveLimiter(clientID)
+		sessionManager.RevokeClientSessions(clientID)
 		log.Printf("Connection closed: %s", clientAddr)
 	}()
 
 	reader := bufio.NewReader(conn)
 
 	// Authentication handshake
-	if !authenticateClient(conn, reader) {
+	sessionToken := authenticateClient(conn, reader)
+	if sessionToken == "" {
 		return
 	}
 
 	// Main command loop
 	for {
+		// Validate session is still active (checks TTL)
+		if sessionManager.ValidateSession(sessionToken) == nil {
+			log.Printf("Session expired for %s", clientAddr)
+			sendResponse(conn, "SESSION:EXPIRED\n")
+			return
+		}
+
 		// Set idle timeout
 		conn.SetReadDeadline(time.Now().Add(IdleTimeout))
 
@@ -620,6 +646,9 @@ func main() {
 	defer close(cleanupStopCh)
 	rateLimiters.StartCleanup(5*time.Minute, 10*time.Minute, cleanupStopCh)
 
+	// Start session cleanup (every 5 minutes)
+	sessionManager.StartCleanup(5*time.Minute, cleanupStopCh)
+
 	// Initialize TLS
 	if err := tlsConfig.EnsureCertificates(); err != nil {
 		log.Fatalf("Failed to setup TLS certificates: %v", err)
@@ -642,20 +671,20 @@ func main() {
 	}
 	defer listener.Close()
 
-	log.Println("========================================")
-	log.Printf("AndroControl Server v%s", ProtocolVersion)
-	log.Printf("Listening on %s:%d (TLS)", HOST, PORT)
-	log.Println("========================================")
+	log.Println("════════════════════════════════════════════════════════════════════")
+	log.Printf("  AndroControl Server v%s", ProtocolVersion)
+	log.Printf("  Listening on %s:%d (TLS)", HOST, PORT)
+	log.Println("════════════════════════════════════════════════════════════════════")
 
-	// Print certificate info
-	tlsConfig.PrintCertificateInfo()
-
-	// Print QR code for easy mobile connection
+	// Print QR code for easy mobile connection (includes token)
 	hostname, _ := os.Hostname()
 	if hostname == "" {
 		hostname = "AndroControl"
 	}
 	PrintQRCode(hostname, PORT, authManager.GetToken())
+
+	// Print certificate info (after auth token for verification)
+	tlsConfig.PrintCertificateInfo()
 
 	log.Println("Waiting for connections...")
 

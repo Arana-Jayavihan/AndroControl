@@ -7,6 +7,7 @@ import android.util.Log;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.security.SecureRandom;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -20,11 +21,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class Protocol {
     private static final String TAG = "Protocol";
-    private static final String PROTOCOL_VERSION = "1.0";
+    private static final String PROTOCOL_VERSION = "1.1";
     private static final int MAX_RETRIES = 3;
     private static final long ACK_TIMEOUT_MS = 2000;
+    private static final int RANDOM_OFFSET_RANGE = 1000;
 
-    private final AtomicInteger sequenceCounter;
+    private final AtomicInteger sequenceBase;
+    private final SecureRandom secureRandom;
     private final ConcurrentHashMap<Integer, PendingMessage> pendingMessages;
     private final Handler mainHandler;
 
@@ -35,6 +38,7 @@ public class Protocol {
     private HeartbeatManager heartbeatManager;
     private final AtomicBoolean running;
     private Thread responseThread;
+    private volatile String sessionToken; // Session token from server (v1.1+)
 
     public interface ProtocolListener {
         void onConnectionLost();
@@ -43,7 +47,9 @@ public class Protocol {
     }
 
     public Protocol() {
-        this.sequenceCounter = new AtomicInteger(0);
+        this.secureRandom = new SecureRandom();
+        // Initialize sequence base with a random starting point
+        this.sequenceBase = new AtomicInteger(secureRandom.nextInt(Integer.MAX_VALUE / 2));
         this.pendingMessages = new ConcurrentHashMap<>();
         this.mainHandler = new Handler(Looper.getMainLooper());
         this.running = new AtomicBoolean(false);
@@ -51,19 +57,38 @@ public class Protocol {
     }
 
     /**
+     * Generates a cryptographically unpredictable sequence ID.
+     * Combines an incrementing base with a random offset to prevent prediction.
+     */
+    private int generateSequenceId() {
+        int base = sequenceBase.incrementAndGet();
+        int randomOffset = secureRandom.nextInt(RANDOM_OFFSET_RANGE);
+        return (base + randomOffset) & 0x7FFFFFFF; // Ensure positive
+    }
+
+    /**
      * Resets the protocol state for a new connection.
      */
     public void reset() {
         stop();
-        sequenceCounter.set(0);
+        // Reset sequence base to new random starting point
+        sequenceBase.set(secureRandom.nextInt(Integer.MAX_VALUE / 2));
         pendingMessages.clear();
         writer = null;
         reader = null;
+        sessionToken = null;
 
         // Recreate executor if shutdown
         if (executor.isShutdown()) {
             executor = Executors.newFixedThreadPool(2);
         }
+    }
+
+    /**
+     * Gets the current session token (for session-based auth).
+     */
+    public String getSessionToken() {
+        return sessionToken;
     }
 
     /**
@@ -116,13 +141,40 @@ public class Protocol {
 
     /**
      * Sends the authentication message.
+     * @deprecated Use authenticate(char[]) for better memory security
      */
+    @Deprecated
     public boolean authenticate(String token) {
-        if (writer == null) return false;
+        if (token == null) return false;
+        char[] tokenChars = token.toCharArray();
+        try {
+            return authenticate(tokenChars);
+        } finally {
+            SecureStorage.clearCharArray(tokenChars);
+        }
+    }
+
+    /**
+     * Sends the authentication message using char[] for secure memory handling.
+     * The token array is cleared after use.
+     */
+    public boolean authenticate(char[] token) {
+        if (writer == null || token == null) return false;
 
         try {
-            writer.println("AUTH:" + token);
-            writer.flush();
+            // Build auth message
+            char[] prefix = "AUTH:".toCharArray();
+            char[] message = new char[prefix.length + token.length];
+            System.arraycopy(prefix, 0, message, 0, prefix.length);
+            System.arraycopy(token, 0, message, prefix.length, token.length);
+
+            try {
+                writer.println(new String(message));
+                writer.flush();
+            } finally {
+                // Clear the message buffer
+                SecureStorage.clearCharArray(message);
+            }
 
             // Read auth response
             String response = reader.readLine();
@@ -131,12 +183,23 @@ public class Protocol {
             }
 
             response = response.trim();
-            Log.d(TAG, "Auth response: " + response);
+            Log.d(TAG, "Auth response: " + (response.startsWith("AUTH:") ? response.substring(0, Math.min(response.length(), 15)) : response));
 
-            return response.equals("AUTH:OK");
+            // Handle new protocol: AUTH:OK or AUTH:OK:<session_token>
+            if (response.equals("AUTH:OK") || response.startsWith("AUTH:OK:")) {
+                if (response.startsWith("AUTH:OK:") && response.length() > 8) {
+                    sessionToken = response.substring(8);
+                    Log.d(TAG, "Session token received");
+                }
+                return true;
+            }
+            return false;
         } catch (IOException e) {
             Log.e(TAG, "Authentication failed", e);
             return false;
+        } finally {
+            // Clear the input token
+            SecureStorage.clearCharArray(token);
         }
     }
 
@@ -189,7 +252,7 @@ public class Protocol {
             return;
         }
 
-        int seqId = sequenceCounter.incrementAndGet();
+        int seqId = generateSequenceId();
         String message = formatMessage(seqId, command, payload);
 
         PendingMessage pending = new PendingMessage(seqId, message, callback);

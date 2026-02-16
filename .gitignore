@@ -16,7 +16,10 @@ local.properties
 
 # Backend secrets - NEVER COMMIT
 Backend-GO/auth_token
+Backend-GO/auth_token.meta
 Backend-GO/certs/
+Backend-GO/AndroControl
+Backend-GO/AndroControl.exe
 *.key
 *.pem
 *.p12

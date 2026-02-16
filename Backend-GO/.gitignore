@@ -1,0 +1,34 @@
+# Sensitive files - NEVER commit these
+auth_token
+auth_token.meta
+certs/
+*.key
+*.pem
+
+# Compiled binary
+AndroControl
+AndroControl.exe
+
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

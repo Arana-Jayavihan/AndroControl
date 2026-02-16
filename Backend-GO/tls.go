@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -232,8 +233,46 @@ func (tc *TLSConfig) PrintCertificateInfo() {
 		return
 	}
 
-	log.Println("=== TLS Certificate Info ===")
-	log.Printf("SHA-256 Fingerprint: %s", fingerprint)
-	log.Println("When connecting for the first time, verify this fingerprint matches")
-	log.Println("============================")
+	// Format fingerprint with colons for readability
+	formattedFp := formatFingerprint(fingerprint)
+
+	log.Println("╔══════════════════════════════════════════════════════════════════╗")
+	log.Println("║                      TLS CERTIFICATE INFO                        ║")
+	log.Println("╠══════════════════════════════════════════════════════════════════╣")
+	log.Println("║  SHA-256 Fingerprint:                                            ║")
+	// Print fingerprint in two lines (32 chars each with colons = ~47 chars per line)
+	if len(formattedFp) > 48 {
+		log.Printf("║    %s  ║", padRight(formattedFp[:47], 62))
+		log.Printf("║    %s  ║", padRight(formattedFp[48:], 62))
+	} else {
+		log.Printf("║    %s  ║", padRight(formattedFp, 62))
+	}
+	log.Println("╠══════════════════════════════════════════════════════════════════╣")
+	log.Println("║  Verify this fingerprint matches when connecting for first time  ║")
+	log.Println("╚══════════════════════════════════════════════════════════════════╝")
+	log.Println()
+}
+
+// formatFingerprint formats a hex fingerprint with colons
+func formatFingerprint(fp string) string {
+	var result strings.Builder
+	for i := 0; i < len(fp); i += 2 {
+		if i > 0 {
+			result.WriteString(":")
+		}
+		end := i + 2
+		if end > len(fp) {
+			end = len(fp)
+		}
+		result.WriteString(strings.ToUpper(fp[i:end]))
+	}
+	return result.String()
+}
+
+// padRight pads a string to the specified length with spaces
+func padRight(s string, length int) string {
+	if len(s) >= length {
+		return s[:length]
+	}
+	return s + strings.Repeat(" ", length-len(s))
 }
