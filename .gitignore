@@ -38,7 +38,7 @@ keystore.properties
 !.env.example
 
 # Vendor (Go dependencies)
-vendor/
+# vendor/
 
 # OS files
 .DS_Store
