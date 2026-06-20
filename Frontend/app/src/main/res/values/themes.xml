@@ -1,5 +1,5 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme -->
+    <!-- ================= Base application theme (LIGHT) ================= -->
     <style name="Base.Theme.AndroControl" parent="Theme.Material3.Light.NoActionBar">
         <!-- Primary brand color -->
         <item name="colorPrimary">@color/primary</item>
@@ -13,9 +13,11 @@
         <item name="colorSecondaryContainer">@color/secondary_container</item>
         <item name="colorOnSecondary">@color/on_secondary</item>
 
-        <!-- Tertiary brand color -->
-        <item name="colorTertiary">@color/tertiary</item>
-        <item name="colorTertiaryContainer">@color/tertiary_container</item>
+        <!-- Tertiary / accent -->
+        <item name="colorTertiary">@color/accent</item>
+        <item name="colorTertiaryContainer">@color/accent_container</item>
+        <item name="colorOnTertiary">@color/on_accent</item>
+        <item name="colorOnTertiaryContainer">@color/on_accent_container</item>
 
         <!-- Background and surface -->
         <item name="android:colorBackground">@color/background</item>
@@ -33,43 +35,130 @@
         <item name="colorOutline">@color/outline</item>
         <item name="colorOutlineVariant">@color/outline_variant</item>
 
-        <!-- Status bar -->
-        <item name="android:statusBarColor">@color/primary</item>
-        <item name="android:navigationBarColor">@color/surface</item>
+        <!-- Shapes -->
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.AndroControl.Small</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.AndroControl.Medium</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.AndroControl.Large</item>
+
+        <!-- Edge-to-edge: transparent system bars, dark icons on light bars -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
+        <item name="android:enforceStatusBarContrast" tools:targetApi="q">false</item>
+        <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>
+
+        <!-- Dialogs pick up brand rounding -->
+        <item name="alertDialogTheme">@style/ThemeOverlay.AndroControl.Dialog</item>
     </style>
 
     <style name="Theme.AndroControl" parent="Base.Theme.AndroControl" />
 
-    <!-- Button Styles -->
-    <style name="Widget.AndroControl.Button.Key" parent="Widget.Material3.Button.TonalButton">
-        <item name="android:minWidth">48dp</item>
-        <item name="android:minHeight">48dp</item>
-        <item name="android:padding">8dp</item>
-        <item name="cornerRadius">12dp</item>
+    <!-- ================= Shapes ================= -->
+    <style name="ShapeAppearance.AndroControl.Small" parent="ShapeAppearance.Material3.Corner.Small">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">10dp</item>
+    </style>
+    <style name="ShapeAppearance.AndroControl.Medium" parent="ShapeAppearance.Material3.Corner.Medium">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">18dp</item>
+    </style>
+    <style name="ShapeAppearance.AndroControl.Large" parent="ShapeAppearance.Material3.Corner.Large">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">26dp</item>
     </style>
 
-    <style name="Widget.AndroControl.Button.Function" parent="Widget.Material3.Button.OutlinedButton">
-        <item name="android:minWidth">44dp</item>
-        <item name="android:minHeight">36dp</item>
-        <item name="android:textSize">11sp</item>
-        <item name="cornerRadius">8dp</item>
+    <!-- ================= Dialog overlay ================= -->
+    <style name="ThemeOverlay.AndroControl.Dialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.AndroControl.Medium</item>
+        <item name="colorSurface">@color/surface</item>
     </style>
 
-    <style name="Widget.AndroControl.Button.Mouse" parent="Widget.Material3.Button.TonalButton">
-        <item name="android:minHeight">56dp</item>
-        <item name="cornerRadius">16dp</item>
+    <!-- ================= Text appearances ================= -->
+    <style name="TextAppearance.AndroControl.SectionHeader" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:letterSpacing">0.08</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 
-    <!-- Card Style -->
+    <!-- ================= Status pill ================= -->
+    <style name="Widget.AndroControl.StatusPill" parent="Widget.Material3.CardView.Filled">
+        <item name="cardCornerRadius">22dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="strokeWidth">1dp</item>
+        <item name="strokeColor">@color/card_stroke</item>
+    </style>
+
+    <!-- ================= Cards ================= -->
     <style name="Widget.AndroControl.Card" parent="Widget.Material3.CardView.Elevated">
-        <item name="cardCornerRadius">16dp</item>
-        <item name="cardElevation">2dp</item>
+        <item name="cardCornerRadius">20dp</item>
+        <item name="cardElevation">1dp</item>
         <item name="strokeWidth">0dp</item>
     </style>
 
-    <!-- Toggle Style -->
-    <style name="Widget.AndroControl.Toggle" parent="Widget.Material3.Button.OutlinedButton">
-        <item name="android:minWidth">56dp</item>
-        <item name="cornerRadius">12dp</item>
+    <!-- ================= Mouse buttons ================= -->
+    <style name="Widget.AndroControl.Button.Mouse" parent="Widget.Material3.Button.TonalButton">
+        <item name="android:layout_height">58dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="cornerRadius">18dp</item>
+    </style>
+    <style name="Widget.AndroControl.Button.Mouse.Primary" parent="Widget.AndroControl.Button.Mouse">
+        <item name="backgroundTint">@color/primary</item>
+        <item name="android:textColor">@color/on_primary</item>
+        <item name="iconTint">@color/on_primary</item>
+    </style>
+
+    <!-- ================= On-screen keyboard keys ================= -->
+    <!-- Letters / numbers / space / arrows (tonal fill) -->
+    <style name="Widget.AndroControl.Key.Tonal" parent="Widget.Material3.Button.TonalButton">
+        <item name="android:layout_height">42dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:layout_marginStart">3dp</item>
+        <item name="cornerRadius">11dp</item>
+    </style>
+
+    <!-- Action keys: Enter / Backspace / Tab / Esc / Home / End / Del (outlined) -->
+    <style name="Widget.AndroControl.Key.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:layout_height">42dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:layout_marginStart">3dp</item>
+        <item name="cornerRadius">11dp</item>
+        <item name="strokeColor">@color/outline_variant</item>
+    </style>
+
+    <!-- Function keys F1–F12 (compact outlined) -->
+    <style name="Widget.AndroControl.Key.Function" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:layout_width">40dp</item>
+        <item name="android:layout_height">34dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:textSize">10sp</item>
+        <item name="android:layout_marginStart">3dp</item>
+        <item name="cornerRadius">9dp</item>
+        <item name="strokeColor">@color/outline_variant</item>
+    </style>
+
+    <!-- Modifier toggle (Ctrl/Alt/Shift/Win) -->
+    <style name="Widget.AndroControl.Toggle" parent="">
+        <item name="android:layout_height">40dp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/toggle_text_color</item>
+        <item name="android:background">@drawable/toggle_button_bg</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:layout_marginStart">3dp</item>
     </style>
 </resources>

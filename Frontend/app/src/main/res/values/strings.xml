@@ -2,4 +2,107 @@
     <string name="app_name">AndroControl</string>
     <string name="navigation_drawer_open">Open navigation drawer</string>
     <string name="navigation_drawer_close">Close navigation drawer</string>
+
+    <!-- Status -->
+    <string name="status_connected">Connected</string>
+    <string name="status_connected_to">Connected to %1$s</string>
+    <string name="status_reconnecting">Connection lost — reconnecting…</string>
+
+    <!-- Touchpad -->
+    <string name="touchpad_title">Touchpad</string>
+    <string name="touchpad_hint">Tap to click · Long-press for right · Two fingers to scroll</string>
+
+    <!-- Mouse buttons -->
+    <string name="mouse_left">Left</string>
+    <string name="mouse_middle">Middle</string>
+    <string name="mouse_right">Right</string>
+
+    <!-- Keyboard -->
+    <string name="btn_keyboard">Keyboard</string>
+    <string name="btn_hide_keyboard">Hide Keyboard</string>
+    <string name="key_backspace">⌫</string>
+    <string name="key_space">Space</string>
+    <string name="key_enter">Enter</string>
+    <string name="key_ctrl">Ctrl</string>
+    <string name="key_alt">Alt</string>
+    <string name="key_shift">Shift</string>
+    <string name="key_win">Win</string>
+    <string name="key_tab">Tab</string>
+    <string name="key_esc">Esc</string>
+    <string name="key_home">Home</string>
+    <string name="key_end">End</string>
+    <string name="key_del">Del</string>
+    <string name="key_arrow_up">▲</string>
+    <string name="key_arrow_down">▼</string>
+    <string name="key_arrow_left">◀</string>
+    <string name="key_arrow_right">▶</string>
+
+    <!-- Drawer -->
+    <string name="drawer_servers_title">Servers</string>
+    <string name="drawer_servers_subtitle">Manage your connections</string>
+    <string name="btn_scan_qr">Scan QR Code</string>
+    <string name="btn_add_manually">Add Manually</string>
+
+    <!-- Server item -->
+    <string name="btn_delete">Delete</string>
+    <string name="btn_edit">Edit</string>
+    <string name="btn_connect">Connect</string>
+
+    <!-- Add/Edit server dialog -->
+    <string name="hint_server_name">Server Name</string>
+    <string name="hint_server_ip">Server IP Address</string>
+    <string name="hint_server_port">Port Number</string>
+    <string name="hint_port_helper">Default: 5050</string>
+    <string name="hint_auth_token">Authentication Token</string>
+    <string name="hint_token_saved">Token saved (enter new to change)</string>
+    <string name="hint_enter_token">Enter authentication token</string>
+    <string name="dialog_add_title">Add Server</string>
+    <string name="dialog_edit_title">Edit Server</string>
+    <string name="action_add">Add</string>
+    <string name="action_save">Save</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="dialog_auth_title">Authentication Required</string>
+    <string name="dialog_auth_message">Enter the token shown on the server</string>
+    <string name="dialog_server_exists_title">Server Exists</string>
+    <string name="dialog_server_exists_message">Server \"%1$s\" (%2$s:%3$d) already exists. Connect now?</string>
+    <string name="dialog_connect_now_title">Connect Now?</string>
+    <string name="dialog_connect_now_message">Server \"%1$s\" has been added. Connect now?</string>
+    <string name="action_later">Later</string>
+
+    <!-- Certificate (TOFU) dialogs -->
+    <string name="dialog_cert_verify_title">Verify Server Certificate</string>
+    <string name="dialog_cert_verify_message">Connecting to %1$s for the first time.\n\nCertificate fingerprint (SHA-256):\n\n%2$s\n\nVerify this fingerprint matches the one shown on the server before accepting.</string>
+    <string name="dialog_cert_warning_title">Certificate Warning</string>
+    <string name="dialog_cert_warning_message">WARNING: The certificate for %1$s has changed!\n\nThis could indicate:\n• A man-in-the-middle attack\n• Server certificate was regenerated\n• You\'re connecting to a different server\n\nExpected fingerprint:\n%2$s\n\nCurrent fingerprint:\n%3$s\n\nIf you did NOT regenerate the server certificate, REJECT this connection.</string>
+    <string name="action_accept">Accept</string>
+    <string name="action_reject">Reject</string>
+    <string name="action_accept_new_cert">Accept New Certificate</string>
+
+    <!-- QR scanner activity -->
+    <string name="msg_camera_permission_required">Camera permission is required</string>
+    <string name="msg_camera_start_failed">Failed to start camera</string>
+
+    <!-- QR scanner -->
+    <string name="qr_title">Scan QR Code</string>
+    <string name="qr_instruction">Point camera at the QR code on the server</string>
+    <string name="qr_close">Close</string>
+
+    <!-- Toasts / messages -->
+    <string name="msg_name_ip_required">Name and IP are required</string>
+    <string name="msg_invalid_port">Invalid port number</string>
+    <string name="msg_server_exists">Server already exists</string>
+    <string name="msg_server_exists_at">Server already exists: %1$s:%2$d</string>
+    <string name="msg_server_added">Server added</string>
+    <string name="msg_server_added_named">Server added: %1$s</string>
+    <string name="msg_disconnected">Disconnected from server</string>
+    <string name="msg_no_token">No auth token configured</string>
+    <string name="msg_auth_failed">Authentication failed</string>
+    <string name="msg_connected_to">Connected to %1$s</string>
+    <string name="msg_connection_failed">Connection failed: %1$s</string>
+    <string name="msg_heartbeat_lost">Connection lost (heartbeat timeout)</string>
+    <string name="msg_connection_restored">Connection restored</string>
+    <string name="msg_connection_lost">Connection lost</string>
+    <string name="msg_error">Error: %1$s</string>
+    <string name="msg_qr_missing_ip">Invalid QR code: missing IP address</string>
+    <string name="msg_invalid_qr">Invalid QR code format. Content: %1$s</string>
 </resources>

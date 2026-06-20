@@ -1,6 +1,7 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Dark application theme -->
+    <!-- ================= Base application theme (DARK) ================= -->
+    <!-- Token colors resolve from values-night/colors.xml; component styles
+         (shapes, keys, cards…) are shared from values/themes.xml. -->
     <style name="Base.Theme.AndroControl" parent="Theme.Material3.Dark.NoActionBar">
         <!-- Primary brand color -->
         <item name="colorPrimary">@color/primary</item>
@@ -14,9 +15,11 @@
         <item name="colorSecondaryContainer">@color/secondary_container</item>
         <item name="colorOnSecondary">@color/on_secondary</item>
 
-        <!-- Tertiary brand color -->
-        <item name="colorTertiary">@color/tertiary</item>
-        <item name="colorTertiaryContainer">@color/tertiary_container</item>
+        <!-- Tertiary / accent -->
+        <item name="colorTertiary">@color/accent</item>
+        <item name="colorTertiaryContainer">@color/accent_container</item>
+        <item name="colorOnTertiary">@color/on_accent</item>
+        <item name="colorOnTertiaryContainer">@color/on_accent_container</item>
 
         <!-- Background and surface -->
         <item name="android:colorBackground">@color/background</item>
@@ -34,9 +37,21 @@
         <item name="colorOutline">@color/outline</item>
         <item name="colorOutlineVariant">@color/outline_variant</item>
 
-        <!-- Status bar -->
-        <item name="android:statusBarColor">@color/surface</item>
-        <item name="android:navigationBarColor">@color/surface</item>
+        <!-- Shapes -->
+        <item name="shapeAppearanceSmallComponent">@style/ShapeAppearance.AndroControl.Small</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.AndroControl.Medium</item>
+        <item name="shapeAppearanceLargeComponent">@style/ShapeAppearance.AndroControl.Large</item>
+
+        <!-- Edge-to-edge: transparent system bars, light icons on dark bars -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+        <item name="android:enforceStatusBarContrast" tools:targetApi="q">false</item>
+        <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>
+
+        <!-- Dialogs pick up brand rounding -->
+        <item name="alertDialogTheme">@style/ThemeOverlay.AndroControl.Dialog</item>
     </style>
 
     <style name="Theme.AndroControl" parent="Base.Theme.AndroControl" />

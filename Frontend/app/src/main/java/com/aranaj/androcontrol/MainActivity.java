@@ -12,8 +12,12 @@ import android.view.KeyEvent;
 import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.EditorInfo;
 
+import androidx.activity.EdgeToEdge;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.EditText;
@@ -140,7 +144,19 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
+
+        // Apply system window insets (status/nav bars, cutout, IME) so content
+        // is never hidden behind system UI in edge-to-edge mode.
+        View root = findViewById(R.id.mainContainer);
+        ViewCompat.setOnApplyWindowInsetsListener(root, (v, windowInsets) -> {
+            Insets bars = windowInsets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+            Insets ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
+            v.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
+            return windowInsets;
+        });
 
         // Initialize haptic feedback
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
@@ -253,7 +269,7 @@ public class MainActivity extends AppCompatActivity implements
         btnToggleKeyboard.setOnClickListener(v -> {
             if (keyboardPanel.getVisibility() == View.VISIBLE) {
                 keyboardPanel.setVisibility(View.GONE);
-                btnToggleKeyboard.setText("Keyboard");
+                btnToggleKeyboard.setText(R.string.btn_keyboard);
                 // Hide native keyboard
                 InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
                 if (imm != null && textInput != null) {
@@ -261,7 +277,7 @@ public class MainActivity extends AppCompatActivity implements
                 }
             } else {
                 keyboardPanel.setVisibility(View.VISIBLE);
-                btnToggleKeyboard.setText("Hide Keyboard");
+                btnToggleKeyboard.setText(R.string.btn_hide_keyboard);
                 // Show native keyboard
                 if (textInput != null) {
                     textInput.requestFocus();
@@ -523,7 +539,7 @@ public class MainActivity extends AppCompatActivity implements
                 statusBar.setVisibility(View.VISIBLE);
                 statusBar.setCardBackgroundColor(getResources().getColor(R.color.success_container, getTheme()));
                 statusIndicator.setBackgroundResource(R.drawable.status_dot);
-                statusText.setText("Connected to " + serverName);
+                statusText.setText(getString(R.string.status_connected_to, serverName));
                 statusText.setTextColor(getResources().getColor(R.color.success, getTheme()));
             } else {
                 statusBar.setVisibility(View.GONE);
@@ -744,8 +760,8 @@ public class MainActivity extends AppCompatActivity implements
         portInput.setText(String.valueOf(serverPort));
 
         builder.setView(dialogView)
-                .setTitle("Add Server")
-                .setPositiveButton("Add", (dialog, which) -> {
+                .setTitle(R.string.dialog_add_title)
+                .setPositiveButton(R.string.action_add, (dialog, which) -> {
                     String name = nameInput.getText().toString().trim();
                     String ip = ipInput.getText().toString().trim();
                     String portStr = portInput.getText().toString().trim();
@@ -753,7 +769,7 @@ public class MainActivity extends AppCompatActivity implements
 
                     // Validate inputs
                     if (name.isEmpty() || ip.isEmpty()) {
-                        Toast.makeText(this, "Name and IP are required", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, R.string.msg_name_ip_required, Toast.LENGTH_SHORT).show();
                         return;
                     }
 
@@ -761,7 +777,7 @@ public class MainActivity extends AppCompatActivity implements
                     try {
                         port = portStr.isEmpty() ? 5050 : Integer.parseInt(portStr);
                     } catch (NumberFormatException e) {
-                        Toast.makeText(this, "Invalid port number", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, R.string.msg_invalid_port, Toast.LENGTH_SHORT).show();
                         return;
                     }
 
@@ -769,7 +785,7 @@ public class MainActivity extends AppCompatActivity implements
 
                     // Check for duplicate
                     if (!serverManager.addServer(server)) {
-                        Toast.makeText(this, "Server already exists: " + ip + ":" + port, Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, getString(R.string.msg_server_exists_at, ip, port), Toast.LENGTH_SHORT).show();
                         return;
                     }
 
@@ -778,9 +794,9 @@ public class MainActivity extends AppCompatActivity implements
                     }
 
                     serverAdapter.notifyItemInserted(serverManager.getServers().size() - 1);
-                    Toast.makeText(this, "Server added", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, R.string.msg_server_added, Toast.LENGTH_SHORT).show();
                 })
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton(R.string.action_cancel, null)
                 .show();
     }
 
@@ -800,19 +816,19 @@ public class MainActivity extends AppCompatActivity implements
 
         String existingToken = secureStorage.getToken(server.getId());
         if (existingToken != null) {
-            tokenInput.setHint("Token saved (enter new to change)");
+            tokenInput.setHint(R.string.hint_token_saved);
         }
 
         builder.setView(dialogView)
-                .setTitle("Edit Server")
-                .setPositiveButton("Save", (dialog, which) -> {
+                .setTitle(R.string.dialog_edit_title)
+                .setPositiveButton(R.string.action_save, (dialog, which) -> {
                     String name = nameInput.getText().toString().trim();
                     String ip = ipInput.getText().toString().trim();
                     String portStr = portInput.getText().toString().trim();
 
                     // Validate inputs
                     if (name.isEmpty() || ip.isEmpty()) {
-                        Toast.makeText(this, "Name and IP are required", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, R.string.msg_name_ip_required, Toast.LENGTH_SHORT).show();
                         return;
                     }
 
@@ -820,7 +836,7 @@ public class MainActivity extends AppCompatActivity implements
                     try {
                         port = portStr.isEmpty() ? server.getPort() : Integer.parseInt(portStr);
                     } catch (NumberFormatException e) {
-                        Toast.makeText(this, "Invalid port number", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, R.string.msg_invalid_port, Toast.LENGTH_SHORT).show();
                         return;
                     }
 
@@ -837,7 +853,7 @@ public class MainActivity extends AppCompatActivity implements
                     serverManager.updateServer(position, server);
                     serverAdapter.notifyItemChanged(position);
                 })
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton(R.string.action_cancel, null)
                 .show();
     }
 
@@ -934,7 +950,7 @@ public class MainActivity extends AppCompatActivity implements
                 if (showNotification) {
                     currentServer = null;
                     serverManager.clearLastConnectedServer();
-                    Toast.makeText(this, "Disconnected from server", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, R.string.msg_disconnected, Toast.LENGTH_SHORT).show();
                 }
             });
         } catch (IOException e) {
@@ -1054,7 +1070,7 @@ public class MainActivity extends AppCompatActivity implements
                         }
                     }
                     mainHandler.post(() -> {
-                        Toast.makeText(this, "No auth token configured", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, R.string.msg_no_token, Toast.LENGTH_SHORT).show();
                         showTokenInputDialog(server);
                     });
                     socket.close();
@@ -1069,7 +1085,7 @@ public class MainActivity extends AppCompatActivity implements
                         }
                     }
                     mainHandler.post(() -> {
-                        Toast.makeText(this, "Authentication failed", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, R.string.msg_auth_failed, Toast.LENGTH_LONG).show();
                         server.setConnected(false);
                         serverAdapter.notifyDataSetChanged();
                     });
@@ -1102,7 +1118,7 @@ public class MainActivity extends AppCompatActivity implements
                     // Only update UI if this is still the current server
                     if (currentServer == server) {
                         updateStatusBar(true, server.getName());
-                        Toast.makeText(this, "Connected to " + server.getName(), Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, getString(R.string.msg_connected_to, server.getName()), Toast.LENGTH_SHORT).show();
                         server.setConnected(true);
                         serverManager.setLastConnectedServer(server.getId());
                         serverAdapter.notifyDataSetChanged();
@@ -1135,7 +1151,7 @@ public class MainActivity extends AppCompatActivity implements
                 Log.e(TAG, "Unexpected error during connection", e);
                 mainHandler.post(() -> {
                     if (!isFinishing() && !isDestroyed()) {
-                        Toast.makeText(this, "Connection failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, getString(R.string.msg_connection_failed, e.getMessage()), Toast.LENGTH_LONG).show();
                     }
                     server.setConnected(false);
                     serverAdapter.notifyDataSetChanged();
@@ -1239,18 +1255,15 @@ public class MainActivity extends AppCompatActivity implements
 
         try {
             currentCertificateDialog = new AlertDialog.Builder(this)
-                    .setTitle("Verify Server Certificate")
-                    .setMessage("Connecting to " + server.getName() + " for the first time.\n\n" +
-                            "Certificate fingerprint (SHA-256):\n\n" +
-                            formatFingerprintForDisplay(fingerprint) + "\n\n" +
-                            "Verify this fingerprint matches the one shown on the server " +
-                            "before accepting.")
-                    .setPositiveButton("Accept", (dialog, which) -> {
+                    .setTitle(R.string.dialog_cert_verify_title)
+                    .setMessage(getString(R.string.dialog_cert_verify_message,
+                            server.getName(), formatFingerprintForDisplay(fingerprint)))
+                    .setPositiveButton(R.string.action_accept, (dialog, which) -> {
                         pendingCertificateReject = null; // Clear so it won't be called on dismiss
                         currentCertificateDialog = null;
                         safeRunCallback(onConfirm);
                     })
-                    .setNegativeButton("Reject", (dialog, which) -> {
+                    .setNegativeButton(R.string.action_reject, (dialog, which) -> {
                         pendingCertificateReject = null; // Clear so it won't be called twice
                         currentCertificateDialog = null;
                         safeRunCallback(onReject);
@@ -1295,24 +1308,18 @@ public class MainActivity extends AppCompatActivity implements
 
         try {
             currentCertificateDialog = new AlertDialog.Builder(this)
-                    .setTitle("Certificate Warning")
+                    .setTitle(R.string.dialog_cert_warning_title)
                     .setIcon(android.R.drawable.ic_dialog_alert)
-                    .setMessage("WARNING: The certificate for " + server.getName() + " has changed!\n\n" +
-                            "This could indicate:\n" +
-                            "• A man-in-the-middle attack\n" +
-                            "• Server certificate was regenerated\n" +
-                            "• You're connecting to a different server\n\n" +
-                            "Expected fingerprint:\n" +
-                            formatFingerprintForDisplay(expectedFingerprint) + "\n\n" +
-                            "Current fingerprint:\n" +
-                            formatFingerprintForDisplay(actualFingerprint) + "\n\n" +
-                            "If you did NOT regenerate the server certificate, REJECT this connection.")
-                    .setPositiveButton("Accept New Certificate", (dialog, which) -> {
+                    .setMessage(getString(R.string.dialog_cert_warning_message,
+                            server.getName(),
+                            formatFingerprintForDisplay(expectedFingerprint),
+                            formatFingerprintForDisplay(actualFingerprint)))
+                    .setPositiveButton(R.string.action_accept_new_cert, (dialog, which) -> {
                         pendingCertificateReject = null;
                         currentCertificateDialog = null;
                         safeRunCallback(onAcceptNew);
                     })
-                    .setNegativeButton("Reject", (dialog, which) -> {
+                    .setNegativeButton(R.string.action_reject, (dialog, which) -> {
                         pendingCertificateReject = null;
                         currentCertificateDialog = null;
                         safeRunCallback(onReject);
@@ -1383,12 +1390,12 @@ public class MainActivity extends AppCompatActivity implements
     private void showTokenInputDialog(Server server) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         EditText tokenInput = new EditText(this);
-        tokenInput.setHint("Enter authentication token");
+        tokenInput.setHint(R.string.hint_enter_token);
 
-        builder.setTitle("Authentication Required")
-                .setMessage("Enter the token shown on the server")
+        builder.setTitle(R.string.dialog_auth_title)
+                .setMessage(R.string.dialog_auth_message)
                 .setView(tokenInput)
-                .setPositiveButton("Connect", (dialog, which) -> {
+                .setPositiveButton(R.string.btn_connect, (dialog, which) -> {
                     String token = tokenInput.getText().toString();
                     if (!token.isEmpty()) {
                         secureStorage.saveToken(server.getId(), token);
@@ -1396,7 +1403,7 @@ public class MainActivity extends AppCompatActivity implements
                         connectToServer(server);
                     }
                 })
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton(R.string.action_cancel, null)
                 .show();
     }
 
@@ -1469,9 +1476,9 @@ public class MainActivity extends AppCompatActivity implements
             statusBar.setVisibility(View.VISIBLE);
             statusBar.setCardBackgroundColor(getResources().getColor(R.color.error_container, getTheme()));
             statusIndicator.setBackgroundResource(R.drawable.status_dot_disconnected);
-            statusText.setText("Connection lost - Reconnecting...");
+            statusText.setText(R.string.status_reconnecting);
             statusText.setTextColor(getResources().getColor(R.color.error, getTheme()));
-            Toast.makeText(this, "Connection lost (heartbeat timeout)", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, R.string.msg_heartbeat_lost, Toast.LENGTH_LONG).show();
         });
         disconnectFromServer();
     }
@@ -1479,7 +1486,7 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     public void onHeartbeatRestored() {
         mainHandler.post(() -> {
-            Toast.makeText(this, "Connection restored", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, R.string.msg_connection_restored, Toast.LENGTH_SHORT).show();
         });
     }
 
@@ -1488,7 +1495,7 @@ public class MainActivity extends AppCompatActivity implements
     public void onConnectionLost() {
         mainHandler.post(() -> {
             updateStatusBar(false, null);
-            Toast.makeText(this, "Connection lost", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, R.string.msg_connection_lost, Toast.LENGTH_LONG).show();
         });
         disconnectFromServer();
     }
@@ -1505,7 +1512,7 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     public void onError(String message) {
         mainHandler.post(() -> {
-            Toast.makeText(this, "Error: " + message, Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.msg_error, message), Toast.LENGTH_SHORT).show();
         });
     }
 
@@ -1551,7 +1558,7 @@ public class MainActivity extends AppCompatActivity implements
             Log.d(TAG, "Parsed - Name: " + name + ", IP: " + ip + ", Port: " + port);
 
             if (ip.isEmpty()) {
-                Toast.makeText(this, "Invalid QR code: missing IP address", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, R.string.msg_qr_missing_ip, Toast.LENGTH_SHORT).show();
                 return;
             }
 
@@ -1559,12 +1566,12 @@ public class MainActivity extends AppCompatActivity implements
             Server existingServer = serverManager.findByAddress(ip, port);
             if (existingServer != null) {
                 // Server exists - offer to connect
-                Toast.makeText(this, "Server already exists", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, R.string.msg_server_exists, Toast.LENGTH_SHORT).show();
                 if (isFinishing() || isDestroyed()) return;
                 new AlertDialog.Builder(this)
-                        .setTitle("Server Exists")
-                        .setMessage("Server \"" + existingServer.getName() + "\" (" + ip + ":" + port + ") already exists. Connect now?")
-                        .setPositiveButton("Connect", (dialog, which) -> {
+                        .setTitle(R.string.dialog_server_exists_title)
+                        .setMessage(getString(R.string.dialog_server_exists_message, existingServer.getName(), ip, port))
+                        .setPositiveButton(R.string.btn_connect, (dialog, which) -> {
                             char[] existingToken = secureStorage.getTokenAsChars(existingServer.getId());
                             if (existingToken != null) {
                                 existingServer.setAuthTokenChars(existingToken);
@@ -1575,7 +1582,7 @@ public class MainActivity extends AppCompatActivity implements
                                 drawerLayout.closeDrawer(GravityCompat.START);
                             }
                         })
-                        .setNegativeButton("Cancel", null)
+                        .setNegativeButton(R.string.action_cancel, null)
                         .show();
                 return;
             }
@@ -1590,14 +1597,14 @@ public class MainActivity extends AppCompatActivity implements
 
             serverAdapter.notifyItemInserted(serverManager.getServers().size() - 1);
 
-            Toast.makeText(this, "Server added: " + name, Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, getString(R.string.msg_server_added_named, name), Toast.LENGTH_SHORT).show();
 
             // Ask if user wants to connect immediately
             if (isFinishing() || isDestroyed()) return;
             new AlertDialog.Builder(this)
-                    .setTitle("Connect Now?")
-                    .setMessage("Server \"" + name + "\" has been added. Connect now?")
-                    .setPositiveButton("Connect", (dialog, which) -> {
+                    .setTitle(R.string.dialog_connect_now_title)
+                    .setMessage(getString(R.string.dialog_connect_now_message, name))
+                    .setPositiveButton(R.string.btn_connect, (dialog, which) -> {
                         server.setAuthToken(token);
                         connectToServer(server);
                         // Close drawer after connecting
@@ -1605,15 +1612,15 @@ public class MainActivity extends AppCompatActivity implements
                             drawerLayout.closeDrawer(GravityCompat.START);
                         }
                     })
-                    .setNegativeButton("Later", null)
+                    .setNegativeButton(R.string.action_later, null)
                     .show();
 
         } catch (JSONException e) {
             Log.e(TAG, "Failed to parse QR code: " + qrContent, e);
-            Toast.makeText(this, "Invalid QR code format. Content: " + qrContent.substring(0, Math.min(50, qrContent.length())), Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.msg_invalid_qr, qrContent.substring(0, Math.min(50, qrContent.length()))), Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             Log.e(TAG, "Unexpected error handling QR code", e);
-            Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.msg_error, e.getMessage()), Toast.LENGTH_LONG).show();
         }
     }
 

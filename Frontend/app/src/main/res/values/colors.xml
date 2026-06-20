@@ -1,55 +1,73 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Primary Colors - Deep Purple -->
-    <color name="primary">#6750A4</color>
-    <color name="primary_variant">#4F378B</color>
-    <color name="primary_container">#EADDFF</color>
-    <color name="on_primary">#FFFFFF</color>
-    <color name="on_primary_container">#21005D</color>
+    <!-- ============================================================= -->
+    <!--  AndroControl brand palette — "Tech Slate + Cyan" (LIGHT)     -->
+    <!--  Semantic names are kept stable; layouts/themes reference     -->
+    <!--  these tokens, so the whole app re-skins by editing values.   -->
+    <!-- ============================================================= -->
 
-    <!-- Secondary Colors - Teal -->
-    <color name="secondary">#625B71</color>
-    <color name="secondary_container">#E8DEF8</color>
+    <!-- Primary — Sky blue -->
+    <color name="primary">#0284C7</color>
+    <color name="primary_variant">#0369A1</color>
+    <color name="primary_container">#D8EEFB</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="on_primary_container">#062B43</color>
+
+    <!-- Accent — Cyan (brand highlight) -->
+    <color name="accent">#06B6D4</color>
+    <color name="accent_container">#CFF4FB</color>
+    <color name="on_accent">#FFFFFF</color>
+    <color name="on_accent_container">#04353F</color>
+
+    <!-- Secondary — Cool slate -->
+    <color name="secondary">#475569</color>
+    <color name="secondary_container">#DDE5EE</color>
     <color name="on_secondary">#FFFFFF</color>
 
-    <!-- Tertiary Colors -->
-    <color name="tertiary">#7D5260</color>
-    <color name="tertiary_container">#FFD8E4</color>
+    <!-- Tertiary -->
+    <color name="tertiary">#0891B2</color>
+    <color name="tertiary_container">#CFF4FB</color>
 
     <!-- Background & Surface -->
-    <color name="background">#FFFBFE</color>
-    <color name="surface">#FFFBFE</color>
-    <color name="surface_variant">#E7E0EC</color>
-    <color name="on_background">#1C1B1F</color>
-    <color name="on_surface">#1C1B1F</color>
-    <color name="on_surface_variant">#49454F</color>
+    <color name="background">#F1F5F9</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_variant">#E2E8F0</color>
+    <color name="surface_container">#F8FAFC</color>
+    <color name="on_background">#0F172A</color>
+    <color name="on_surface">#0F172A</color>
+    <color name="on_surface_variant">#475569</color>
 
     <!-- Status Colors -->
-    <color name="success">#2E7D32</color>
-    <color name="success_light">#4CAF50</color>
-    <color name="success_container">#C8E6C9</color>
-    <color name="error">#B3261E</color>
-    <color name="error_container">#F9DEDC</color>
-    <color name="warning">#F57C00</color>
-    <color name="warning_container">#FFE0B2</color>
+    <color name="success">#16A34A</color>
+    <color name="success_light">#22C55E</color>
+    <color name="success_container">#D5F5E0</color>
+    <color name="error">#E11D48</color>
+    <color name="error_container">#FCE0E6</color>
+    <color name="warning">#D97706</color>
+    <color name="warning_container">#FCEBCF</color>
 
     <!-- Outline -->
-    <color name="outline">#79747E</color>
-    <color name="outline_variant">#CAC4D0</color>
+    <color name="outline">#94A3B8</color>
+    <color name="outline_variant">#CBD5E1</color>
 
     <!-- Touchpad Colors -->
-    <color name="touchpad_bg">#F3EDF7</color>
-    <color name="touchpad_pressed">#E6E0E9</color>
-    <color name="touchpad_stroke">#CAC4D0</color>
+    <color name="touchpad_bg">#F8FAFC</color>
+    <color name="touchpad_pressed">#E2E8F0</color>
+    <color name="touchpad_stroke">#CBD5E1</color>
+    <color name="touchpad_grid">#1A0284C7</color>
 
     <!-- Card Colors -->
     <color name="card_bg">#FFFFFF</color>
-    <color name="card_stroke">#E7E0EC</color>
+    <color name="card_stroke">#E2E8F0</color>
 
     <!-- Text Colors -->
-    <color name="text_primary">#1C1B1F</color>
-    <color name="text_secondary">#49454F</color>
-    <color name="text_disabled">#79747E</color>
+    <color name="text_primary">#0F172A</color>
+    <color name="text_secondary">#475569</color>
+    <color name="text_disabled">#94A3B8</color>
+
+    <!-- Scrim / overlays -->
+    <color name="scrim">#99000000</color>
+    <color name="scrim_light">#66000000</color>
 
     <!-- Legacy -->
     <color name="black">#FF000000</color>

@@ -6,11 +6,16 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.util.Log;
 import android.util.Size;
+import android.view.View;
 import android.widget.Toast;
 
+import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
 import androidx.annotation.OptIn;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ExperimentalGetImage;
 import androidx.camera.core.ImageAnalysis;
@@ -45,11 +50,21 @@ public class QRScannerActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        EdgeToEdge.enable(this);
 
         try {
             setContentView(R.layout.activity_qr_scanner);
 
             previewView = findViewById(R.id.previewView);
+
+            // Push the top bar below the status bar in edge-to-edge mode.
+            View topBar = findViewById(R.id.qrTopBar);
+            ViewCompat.setOnApplyWindowInsetsListener(topBar, (v, windowInsets) -> {
+                Insets bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
+                v.setPadding(v.getPaddingLeft(), bars.top + (int) (16 * getResources().getDisplayMetrics().density),
+                        v.getPaddingRight(), v.getPaddingBottom());
+                return windowInsets;
+            });
             cameraExecutor = Executors.newSingleThreadExecutor();
 
             // Initialize barcode scanner
@@ -75,7 +90,7 @@ public class QRScannerActivity extends AppCompatActivity {
             });
         } catch (Exception e) {
             Log.e(TAG, "Error in onCreate", e);
-            Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.msg_error, e.getMessage()), Toast.LENGTH_LONG).show();
             finish();
         }
     }
@@ -88,7 +103,7 @@ public class QRScannerActivity extends AppCompatActivity {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 startCamera();
             } else {
-                Toast.makeText(this, "Camera permission is required", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, R.string.msg_camera_permission_required, Toast.LENGTH_LONG).show();
                 finish();
             }
         }
@@ -104,7 +119,7 @@ public class QRScannerActivity extends AppCompatActivity {
                 bindCameraUseCases(cameraProvider);
             } catch (ExecutionException | InterruptedException e) {
                 Log.e(TAG, "Failed to get camera provider", e);
-                Toast.makeText(this, "Failed to start camera", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, R.string.msg_camera_start_failed, Toast.LENGTH_SHORT).show();
             }
         }, ContextCompat.getMainExecutor(this));
     }
