@@ -39,8 +39,21 @@ case "$cmd" in
     run -cleanup
     reload
     ;;
+  rename)
+    shift
+    [ "$#" -ge 2 ] || { echo "usage: androcontrol-ctl rename <id> <new-name>" >&2; exit 1; }
+    id="$1"; shift
+    run -rename "$id" -name "$*"
+    reload
+    ;;
+  prune-inactive)
+    shift
+    [ "$#" -ge 1 ] || { echo "usage: androcontrol-ctl prune-inactive <days>" >&2; exit 1; }
+    run -prune-inactive "$1"
+    reload
+    ;;
   *)
-    echo "usage: androcontrol-ctl {list | revoke <id|name> | revoke-all | cleanup}" >&2
+    echo "usage: androcontrol-ctl {list | revoke <id|name> | revoke-all | cleanup | rename <id> <name> | prune-inactive <days>}" >&2
     exit 1
     ;;
 esac

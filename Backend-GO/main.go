@@ -37,10 +37,10 @@ var (
 	// Global managers
 	connManager    *ConnectionManager
 	authManager    *AuthManager
-	sessionManager *SessionManager
 	rateLimiters   *ClientRateLimiters
 	tlsConfig      *TLSConfig
 	deviceManager  *DeviceManager
+	authThrottler  *AuthThrottler
 )
 
 func init() {
@@ -49,10 +49,10 @@ func init() {
 	// as -list-devices / -revoke can run on machines without /dev/uinput access.
 	connManager = NewConnectionManager()
 	authManager = NewAuthManager()
-	sessionManager = NewSessionManager()
 	rateLimiters = NewClientRateLimiters()
 	tlsConfig = NewTLSConfig()
 	deviceManager = NewDeviceManager()
+	authThrottler = NewAuthThrottler()
 }
 
 // initInputDevices creates the virtual keyboard and mouse via uinput.
@@ -392,35 +392,42 @@ func sendResponse(conn net.Conn, response string) error {
 // authenticateClient handles the authentication handshake.
 // Supports two flows over a single connection:
 //
-//	PAIR:<enrollment_token>:<device_name>  -> registers a new per-device token
-//	AUTH:<device_token>                    -> authenticates an already-paired device
+//	PAIR:<enrollment_token>:<client_device_id>:<device_name> -> registers a per-device token
+//	AUTH:<device_token>                                       -> authenticates a paired device
 //
-// On success it creates a session and returns its token; on failure it returns "".
-func authenticateClient(conn net.Conn, reader *bufio.Reader) string {
+// On success it returns the authenticated device ID and ok=true; on failure ok=false.
+// The authenticated TLS connection itself is the trust boundary; connection
+// lifecycle is handled by the idle read deadline and the client heartbeat.
+func authenticateClient(conn net.Conn, reader *bufio.Reader) (deviceID string, ok bool) {
 	clientID := conn.RemoteAddr().String()
 	clientIP := extractIP(conn.RemoteAddr())
+
+	// Reject early if this IP is locked out from too many failed attempts.
+	if ok, remaining := authThrottler.Allowed(clientIP); !ok {
+		logAudit("auth_blocked ip=%s lockout_remaining=%s", clientIP, remaining.Round(time.Second))
+		sendResponse(conn, "AUTH:LOCKED\n")
+		return "", false
+	}
 
 	// Set auth timeout
 	conn.SetReadDeadline(time.Now().Add(AuthTimeoutDuration))
 
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		log.Printf("Auth timeout or read error from %s: %v", clientID, err)
+		logDebug("Auth timeout or read error from %s: %v", clientID, err)
 		sendResponse(conn, AuthTimeout.String()+"\n")
-		return ""
+		return "", false
 	}
 	line = strings.TrimSpace(line)
-
-	var device *Device
 
 	if strings.HasPrefix(line, "PAIR:") {
 		// Pairing flow: PAIR:<enrollment_token>:<client_device_id>:<device_name>
 		// (legacy clients send PAIR:<enrollment_token>:<device_name> with no id)
 		parts := strings.SplitN(line, ":", 4)
 		if len(parts) < 2 {
-			log.Printf("Invalid pair format from %s", clientID)
+			logWarn("Invalid pair format from %s", clientIP)
 			sendResponse(conn, "PAIR:INVALID\n")
-			return ""
+			return "", false
 		}
 		enrollToken := strings.TrimSpace(parts[1])
 		clientDeviceID := ""
@@ -433,60 +440,50 @@ func authenticateClient(conn net.Conn, reader *bufio.Reader) string {
 		}
 
 		if !authManager.Validate(enrollToken) {
-			log.Printf("Pairing rejected from %s (bad enrollment token)", clientIP)
+			locked := authThrottler.RecordFailure(clientIP)
+			logAudit("pair_failed ip=%s reason=bad_enrollment_token locked=%t", clientIP, locked)
 			sendResponse(conn, "PAIR:FAIL\n")
-			return ""
+			return "", false
 		}
 
 		id, token, err := deviceManager.Register(clientDeviceID, deviceName, clientIP)
 		if err != nil {
-			log.Printf("Failed to register device for %s: %v", clientID, err)
+			logError("Failed to register device for %s: %v", clientIP, err)
 			sendResponse(conn, "PAIR:ERROR\n")
-			return ""
+			return "", false
 		}
 
-		session, err := sessionManager.CreateSession(clientID)
-		if err != nil {
-			log.Printf("Failed to create session for %s: %v", clientID, err)
-			sendResponse(conn, "PAIR:ERROR\n")
-			return ""
-		}
-
-		// PAIR:OK:<device_id>:<device_token>:<session_token>
-		sendResponse(conn, fmt.Sprintf("PAIR:OK:%s:%s:%s\n", id, token, session.Token))
+		authThrottler.RecordSuccess(clientIP)
+		// PAIR:OK:<device_id>:<device_token>
+		sendResponse(conn, fmt.Sprintf("PAIR:OK:%s:%s\n", id, token))
 		conn.SetReadDeadline(time.Time{})
-		log.Printf("Paired and authenticated device %s from %s", id, clientIP)
-		return session.Token
+		logAudit("pair_ok device_id=%s ip=%s", id, clientIP)
+		return id, true
 	}
 
 	// Authentication flow: AUTH:<device_token>
 	token, err := ParseAuthMessage(line)
 	if err != nil {
-		log.Printf("Invalid auth format from %s: %v", clientID, err)
+		locked := authThrottler.RecordFailure(clientIP)
+		logAudit("auth_failed ip=%s reason=bad_format locked=%t", clientIP, locked)
 		sendResponse(conn, AuthInvalidFormat.String()+"\n")
-		return ""
+		return "", false
 	}
 
-	device = deviceManager.ValidateToken(token)
+	device := deviceManager.ValidateToken(token)
 	if device == nil {
-		log.Printf("Auth failed from %s (unknown or revoked device)", clientIP)
+		locked := authThrottler.RecordFailure(clientIP)
+		logAudit("auth_failed ip=%s reason=unknown_or_revoked_device locked=%t", clientIP, locked)
 		sendResponse(conn, AuthFailed.String()+"\n")
-		return ""
+		return "", false
 	}
 	deviceManager.Touch(device.ID, clientIP)
 
-	session, err := sessionManager.CreateSession(clientID)
-	if err != nil {
-		log.Printf("Failed to create session for %s: %v", clientID, err)
-		sendResponse(conn, "AUTH:ERROR\n")
-		return ""
-	}
-
-	log.Printf("Auth successful: device %q (%s) from %s", device.Name, device.ID, clientIP)
-	sendResponse(conn, fmt.Sprintf("AUTH:OK:%s\n", session.Token))
-
+	authThrottler.RecordSuccess(clientIP)
+	sendResponse(conn, "AUTH:OK\n")
 	conn.SetReadDeadline(time.Time{})
-	return session.Token
+	logAudit("auth_ok device=%q device_id=%s ip=%s", device.Name, device.ID, clientIP)
+	return device.ID, true
 }
 
 // handleCommand processes a single command and returns a response
@@ -643,27 +640,19 @@ func handleClient(conn net.Conn) {
 		conn.Close()
 		connManager.Release(clientAddr)
 		rateLimiters.RemoveLimiter(clientID)
-		sessionManager.RevokeClientSessions(clientID)
 		log.Printf("Connection closed: %s", clientAddr)
 	}()
 
 	reader := bufio.NewReader(conn)
 
 	// Authentication handshake
-	sessionToken := authenticateClient(conn, reader)
-	if sessionToken == "" {
+	deviceID, ok := authenticateClient(conn, reader)
+	if !ok {
 		return
 	}
 
 	// Main command loop
 	for {
-		// Validate session is still active (checks TTL)
-		if sessionManager.ValidateSession(sessionToken) == nil {
-			log.Printf("Session expired for %s", clientAddr)
-			sendResponse(conn, "SESSION:EXPIRED\n")
-			return
-		}
-
 		// Set idle timeout
 		conn.SetReadDeadline(time.Now().Add(IdleTimeout))
 
@@ -690,6 +679,15 @@ func handleClient(conn net.Conn) {
 			return
 		}
 
+		// Handle UNPAIR: the device revokes itself, then the connection closes.
+		if line == "UNPAIR" {
+			if deviceManager.Revoke(deviceID) {
+				logAudit("unpair device_id=%s ip=%s", deviceID, extractIP(clientAddr))
+			}
+			sendResponse(conn, "UNPAIR:OK\n")
+			return
+		}
+
 		// Parse message
 		msg, err := ParseMessage(line)
 		if err != nil {
@@ -705,34 +703,60 @@ func handleClient(conn net.Conn) {
 	}
 }
 
+// adminOpts holds parsed device-admin command flags.
+type adminOpts struct {
+	list              bool
+	revoke            string
+	revokeAll         bool
+	cleanup           bool
+	renameID          string
+	renameTo          string
+	pruneInactiveDays int
+}
+
 // runDeviceAdmin handles the device-management admin commands and exits.
-func runDeviceAdmin(listDevices bool, revoke string, revokeAll bool, cleanup bool) {
+func runDeviceAdmin(o adminOpts) {
 	if err := deviceManager.Load(); err != nil {
 		log.Fatalf("Failed to load device registry: %v", err)
 	}
 
-	if revokeAll {
+	if o.revokeAll {
 		n := deviceManager.RevokeAll()
 		fmt.Printf("Revoked %d device(s).\n", n)
 	}
 
-	if revoke != "" {
+	if o.revoke != "" {
 		// Match by exact device ID first, then fall back to device name.
-		if deviceManager.Revoke(revoke) {
-			fmt.Printf("Device %s revoked.\n", revoke)
-		} else if n := deviceManager.RevokeByName(revoke); n > 0 {
-			fmt.Printf("Revoked %d device(s) named %q.\n", n, revoke)
+		if deviceManager.Revoke(o.revoke) {
+			fmt.Printf("Device %s revoked.\n", o.revoke)
+		} else if n := deviceManager.RevokeByName(o.revoke); n > 0 {
+			fmt.Printf("Revoked %d device(s) named %q.\n", n, o.revoke)
 		} else {
-			fmt.Printf("No device found with ID or name %q.\n", revoke)
+			fmt.Printf("No device found with ID or name %q.\n", o.revoke)
 		}
 	}
 
-	if cleanup {
+	if o.renameID != "" {
+		if o.renameTo == "" {
+			fmt.Println("Error: -rename requires -name <new-name>.")
+		} else if deviceManager.Rename(o.renameID, o.renameTo) {
+			fmt.Printf("Device %s renamed to %q.\n", o.renameID, o.renameTo)
+		} else {
+			fmt.Printf("No device found with ID %s.\n", o.renameID)
+		}
+	}
+
+	if o.pruneInactiveDays > 0 {
+		n := deviceManager.PruneInactive(time.Duration(o.pruneInactiveDays) * 24 * time.Hour)
+		fmt.Printf("Removed %d device(s) inactive for more than %d day(s).\n", n, o.pruneInactiveDays)
+	}
+
+	if o.cleanup {
 		n := deviceManager.CleanupRevoked()
 		fmt.Printf("Removed %d revoked device(s) from the registry.\n", n)
 	}
 
-	if listDevices {
+	if o.list {
 		devices := deviceManager.List()
 		if len(devices) == 0 {
 			fmt.Println("No paired devices.")
@@ -755,11 +779,17 @@ func main() {
 	addr := flag.String("addr", HOST, "Bind address (e.g. 0.0.0.0 for all interfaces, 127.0.0.1 for loopback only)")
 	port := flag.Int("port", PORT, "TCP port to listen on")
 	dataDir := flag.String("data-dir", "", "Directory holding certs/, auth_token and devices.json (default: current directory)")
+	logLevel := flag.String("log-level", "info", "Log verbosity: debug, info, warn, error")
 	listDevices := flag.Bool("list-devices", false, "List paired devices and exit")
 	revoke := flag.String("revoke", "", "Revoke a paired device by ID or name, then exit")
 	revokeAll := flag.Bool("revoke-all", false, "Revoke all paired devices, then exit")
 	cleanup := flag.Bool("cleanup", false, "Remove revoked devices from the registry, then exit")
+	renameID := flag.String("rename", "", "Rename a device by ID (use with -name), then exit")
+	renameTo := flag.String("name", "", "New device name (used with -rename)")
+	pruneInactive := flag.Int("prune-inactive", 0, "Remove devices not seen in N days, then exit")
 	flag.Parse()
+
+	SetLogLevel(*logLevel)
 
 	// All data files are resolved relative to the working directory, so honour
 	// -data-dir by switching into it (lets admin commands run from anywhere).
@@ -769,8 +799,16 @@ func main() {
 		}
 	}
 
-	if *listDevices || *revoke != "" || *revokeAll || *cleanup {
-		runDeviceAdmin(*listDevices, *revoke, *revokeAll, *cleanup)
+	if *listDevices || *revoke != "" || *revokeAll || *cleanup || *renameID != "" || *pruneInactive > 0 {
+		runDeviceAdmin(adminOpts{
+			list:              *listDevices,
+			revoke:            *revoke,
+			revokeAll:         *revokeAll,
+			cleanup:           *cleanup,
+			renameID:          *renameID,
+			renameTo:          *renameTo,
+			pruneInactiveDays: *pruneInactive,
+		})
 		return
 	}
 
@@ -786,8 +824,8 @@ func main() {
 	defer close(cleanupStopCh)
 	rateLimiters.StartCleanup(5*time.Minute, 10*time.Minute, cleanupStopCh)
 
-	// Start session cleanup (every 5 minutes)
-	sessionManager.StartCleanup(5*time.Minute, cleanupStopCh)
+	// Start auth-throttle cleanup (every 5 minutes)
+	authThrottler.StartCleanup(5*time.Minute, cleanupStopCh)
 
 	// Initialize TLS
 	if err := tlsConfig.EnsureCertificates(); err != nil {
@@ -843,6 +881,14 @@ func main() {
 	log.Printf("  AndroControl Server v%s", ProtocolVersion)
 	log.Printf("  Listening on %s:%d (TLS)", *addr, *port)
 	log.Println("════════════════════════════════════════════════════════════════════")
+
+	// Effective configuration summary (useful when debugging deployments).
+	cwd, _ := os.Getwd()
+	logInfo("config: addr=%s port=%d data-dir=%s log-level=%s", *addr, *port, cwd, *logLevel)
+	logInfo("limits: max_conns=%d max_per_ip=%d rate=%.0f/s auth_lockout=%d failures/%s",
+		DefaultMaxConnections, DefaultMaxPerIP, DefaultTokensPerSecond,
+		DefaultMaxAuthFailures, DefaultAuthFailureWindow)
+	logInfo("paired devices: %d", deviceManager.Count())
 
 	// Print QR code for easy mobile connection (includes enrollment token)
 	hostname, _ := os.Hostname()

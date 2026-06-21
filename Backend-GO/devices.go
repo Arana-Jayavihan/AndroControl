@@ -314,6 +314,41 @@ func (dm *DeviceManager) RevokeAll() int {
 	return count
 }
 
+// Rename changes a device's display name. Returns false if the ID is unknown.
+func (dm *DeviceManager) Rename(id, name string) bool {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	if d, ok := dm.devices[id]; ok {
+		d.Name = sanitizeDeviceName(name)
+		if err := dm.saveLocked(); err != nil {
+			log.Printf("Warning: failed to persist device rename: %v", err)
+		}
+		return true
+	}
+	return false
+}
+
+// PruneInactive permanently removes devices not seen within maxAge.
+// Returns the number of records removed.
+func (dm *DeviceManager) PruneInactive(maxAge time.Duration) int {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	cutoff := time.Now().Add(-maxAge)
+	removed := 0
+	for id, d := range dm.devices {
+		if d.LastSeen.Before(cutoff) {
+			delete(dm.devices, id)
+			removed++
+		}
+	}
+	if removed > 0 {
+		if err := dm.saveLocked(); err != nil {
+			log.Printf("Warning: failed to persist inactive-device prune: %v", err)
+		}
+	}
+	return removed
+}
+
 // CleanupRevoked permanently removes revoked devices from the registry.
 // Returns the number of records removed.
 func (dm *DeviceManager) CleanupRevoked() int {

@@ -61,7 +61,20 @@ public class SettingsActivity extends AppCompatActivity {
         setupThemeControls();
         setupScrollbarControls();
         setupHapticControls();
+        setupDeviceInfo();
         refreshPreview();
+    }
+
+    private void setupDeviceInfo() {
+        TextView nameValue = findViewById(R.id.deviceNameValue);
+        TextView idValue = findViewById(R.id.deviceIdValue);
+
+        String name = android.os.Build.MODEL;
+        if (name == null || name.trim().isEmpty()) {
+            name = android.os.Build.MANUFACTURER;
+        }
+        nameValue.setText(name);
+        idValue.setText(settings.getClientDeviceId());
     }
 
     private void setupThemeControls() {

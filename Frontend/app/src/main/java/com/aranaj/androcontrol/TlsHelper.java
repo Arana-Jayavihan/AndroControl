@@ -171,13 +171,14 @@ public class TlsHelper {
                             String formattedFingerprint = formatFingerprint(fingerprint);
 
                             if (expectedFingerprint == null) {
-                                // First connection - require user confirmation if callback is set
-                                if (confirmationCallback != null) {
-                                    if (!requestUserConfirmation(formattedFingerprint, false)) {
-                                        throw new CertificateException("User rejected certificate");
-                                    }
-                                } else {
-                                    Log.w(TAG, "First connection - auto-trusting certificate (no callback set)");
+                                // First connection - require explicit user confirmation.
+                                // Fail closed: never auto-trust if no confirmation handler is set.
+                                if (confirmationCallback == null) {
+                                    throw new CertificateException(
+                                            "No certificate confirmation handler set; refusing to trust on first use");
+                                }
+                                if (!requestUserConfirmation(formattedFingerprint, false)) {
+                                    throw new CertificateException("User rejected certificate");
                                 }
                                 saveFingerprint(fingerprint);
                                 Log.i(TAG, "Certificate accepted and saved");
@@ -234,7 +235,7 @@ public class TlsHelper {
      */
     private boolean requestUserConfirmation(String fingerprint, boolean isMismatch) {
         if (confirmationCallback == null) {
-            return true; // Auto-accept if no callback
+            return false; // Fail closed: never accept without explicit confirmation
         }
 
         final CountDownLatch latch = new CountDownLatch(1);

@@ -1,5 +1,11 @@
 package com.aranaj.androcontrol;
 
+import android.Manifest;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -17,6 +23,7 @@ import android.view.inputmethod.EditorInfo;
 import androidx.activity.EdgeToEdge;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -91,6 +98,9 @@ public class MainActivity extends AppCompatActivity implements
     // Settings
     private SettingsManager settingsManager;
 
+    // Receives the "Disconnect" action from the foreground-service notification.
+    private BroadcastReceiver disconnectReceiver;
+
     private String serverIp = "";
     private int serverPort = 5050;
     private SSLSocket socket;
@@ -145,6 +155,11 @@ public class MainActivity extends AppCompatActivity implements
 
     // QR Code scanner
     private static final String TAG = "MainActivity";
+
+    private final ActivityResultLauncher<String> notificationPermissionLauncher =
+            registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
+                // Best-effort: the foreground service still runs if denied, just without a visible notification.
+            });
 
     private final ActivityResultLauncher<Intent> qrScannerLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
@@ -302,6 +317,24 @@ public class MainActivity extends AppCompatActivity implements
         setupKeyboardPanel();
         setupControlButtons();
         applyScrollbarSettings();
+
+        // Listen for the notification's "Disconnect" action.
+        disconnectReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                reconnectTarget = null; // user-initiated; don't auto-reconnect
+                disconnectFromServer();
+            }
+        };
+        ContextCompat.registerReceiver(this, disconnectReceiver,
+                new IntentFilter(ConnectionService.ACTION_DISCONNECT_REQUEST),
+                ContextCompat.RECEIVER_NOT_EXPORTED);
+
+        // Ask for notification permission so the ongoing-connection notification is visible (Android 13+).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
+        }
     }
 
     @Override
@@ -681,8 +714,11 @@ public class MainActivity extends AppCompatActivity implements
                 statusIndicator.setBackgroundResource(R.drawable.status_dot);
                 statusText.setText(getString(R.string.status_connected_to, serverName));
                 statusText.setTextColor(getResources().getColor(R.color.success, getTheme()));
+                // Keep the session alive in the background.
+                ConnectionService.start(this, serverName);
             } else {
                 statusBar.setVisibility(View.GONE);
+                ConnectionService.stop(this);
             }
         });
     }
@@ -1017,8 +1053,54 @@ public class MainActivity extends AppCompatActivity implements
                     serverManager.updateServer(position, server);
                     serverAdapter.notifyItemChanged(position);
                 })
+                .setNeutralButton(R.string.action_unpair, (dialog, which) -> confirmUnpair(server))
                 .setNegativeButton(R.string.action_cancel, null)
                 .show();
+    }
+
+    /** Confirms then unpairs this device from the given server. */
+    private void confirmUnpair(Server server) {
+        if (!secureStorage.hasDeviceToken(server.getId())) {
+            Toast.makeText(this, R.string.msg_not_paired, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.dialog_unpair_title)
+                .setMessage(getString(R.string.dialog_unpair_message, server.getName()))
+                .setPositiveButton(R.string.action_unpair, (d, w) -> unpairDevice(server))
+                .setNegativeButton(R.string.action_cancel, null)
+                .show();
+    }
+
+    /**
+     * Removes this device's pairing with the server. If currently connected to it,
+     * also asks the server to revoke this device, then disconnects.
+     */
+    private void unpairDevice(Server server) {
+        boolean connectedToThis = currentServer == server
+                && protocol != null && protocol.isConnected();
+
+        if (connectedToThis) {
+            reconnectTarget = null;
+            executorService.execute(() -> {
+                try {
+                    protocol.sendUnpair(); // server revokes this device, then closes
+                } catch (Exception e) {
+                    Log.w(TAG, "Unpair request failed", e);
+                }
+                secureStorage.removeDeviceToken(server.getId());
+                secureStorage.removeDeviceId(server.getId());
+                mainHandler.post(() -> {
+                    disconnectFromServer();
+                    Toast.makeText(this, R.string.msg_unpaired, Toast.LENGTH_SHORT).show();
+                });
+            });
+        } else {
+            // Not connected — clear the local pairing only.
+            secureStorage.removeDeviceToken(server.getId());
+            secureStorage.removeDeviceId(server.getId());
+            Toast.makeText(this, R.string.msg_unpaired, Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void disconnectFromServer() {
@@ -1242,19 +1324,27 @@ public class MainActivity extends AppCompatActivity implements
                 if (deviceToken != null) {
                     // authenticate() clears the token array after use.
                     if (!protocol.authenticate(deviceToken)) {
-                        // Rejected — device likely revoked or the server was reset.
-                        secureStorage.removeDeviceToken(server.getId());
-                        secureStorage.removeDeviceId(server.getId());
+                        // Distinguish a temporary lockout from an actual revocation.
+                        boolean locked = protocol.wasLastAttemptLocked();
+                        if (!locked) {
+                            // Rejected — device revoked or the server was reset.
+                            secureStorage.removeDeviceToken(server.getId());
+                            secureStorage.removeDeviceId(server.getId());
+                        }
                         synchronized (connectionLock) {
                             if (currentServer == server) {
                                 isConnecting = false;
                             }
                         }
                         mainHandler.post(() -> {
-                            Toast.makeText(this, R.string.msg_device_revoked, Toast.LENGTH_LONG).show();
+                            if (locked) {
+                                Toast.makeText(this, R.string.msg_locked, Toast.LENGTH_LONG).show();
+                            } else {
+                                Toast.makeText(this, R.string.msg_device_revoked, Toast.LENGTH_LONG).show();
+                                showTokenInputDialog(server);
+                            }
                             server.setConnected(false);
                             serverAdapter.notifyDataSetChanged();
-                            showTokenInputDialog(server);
                         });
                         socket.close();
                         return;
@@ -1279,13 +1369,15 @@ public class MainActivity extends AppCompatActivity implements
                     Protocol.PairResult pairResult = protocol.pair(
                             enrollToken, settingsManager.getClientDeviceId(), getDeviceName());
                     if (pairResult == null) {
+                        boolean locked = protocol.wasLastAttemptLocked();
                         synchronized (connectionLock) {
                             if (currentServer == server) {
                                 isConnecting = false;
                             }
                         }
                         mainHandler.post(() -> {
-                            Toast.makeText(this, R.string.msg_pairing_failed, Toast.LENGTH_LONG).show();
+                            Toast.makeText(this, locked ? R.string.msg_locked : R.string.msg_pairing_failed,
+                                    Toast.LENGTH_LONG).show();
                             server.setConnected(false);
                             serverAdapter.notifyDataSetChanged();
                         });
@@ -1853,6 +1945,14 @@ public class MainActivity extends AppCompatActivity implements
         // Dismiss any certificate dialog and signal its callback to unblock TLS threads
         dismissCurrentCertificateDialog();
 
+        if (disconnectReceiver != null) {
+            try {
+                unregisterReceiver(disconnectReceiver);
+            } catch (Exception ignored) {
+            }
+            disconnectReceiver = null;
+        }
+
         synchronized (connectionLock) {
             isConnecting = false;
         }
@@ -1860,6 +1960,7 @@ public class MainActivity extends AppCompatActivity implements
         heartbeatManager.shutdown();
         protocol.shutdown();
         disconnectFromServer();
+        ConnectionService.stop(this);
         executorService.shutdown();
     }
 }

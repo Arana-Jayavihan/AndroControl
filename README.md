@@ -62,13 +62,16 @@ The solution follows a client-server architecture:
 ```
 ./AndroControl [flags]
 
-  -addr string      Bind address (default "0.0.0.0"; use 127.0.0.1 for loopback only)
-  -port int         TCP port to listen on (default 5050)
-  -data-dir string  Directory with certs/, auth_token, devices.json (default: current dir)
-  -list-devices     List paired devices and exit
-  -revoke <id|name> Revoke a paired device by ID or name, then exit
-  -revoke-all       Revoke all paired devices, then exit
-  -cleanup          Remove revoked devices from the registry, then exit
+  -addr string         Bind address (default "0.0.0.0"; use 127.0.0.1 for loopback only)
+  -port int            TCP port to listen on (default 5050)
+  -data-dir string     Directory with certs/, auth_token, devices.json (default: current dir)
+  -log-level string    Log verbosity: debug, info, warn, error (default "info")
+  -list-devices        List paired devices and exit
+  -revoke <id|name>    Revoke a paired device by ID or name, then exit
+  -revoke-all          Revoke all paired devices, then exit
+  -rename <id> -name <n>  Rename a device, then exit
+  -prune-inactive <days>  Remove devices not seen in N days, then exit
+  -cleanup             Remove revoked devices from the registry, then exit
 ```
 
 The server stops cleanly on `Ctrl+C` / `SIGTERM`, releasing the virtual input devices.
@@ -96,10 +99,12 @@ command as the service user against the right data directory and reloads the
 service for you:
 
 ```bash
-sudo androcontrol-ctl list                 # list devices (id, name, status, last seen, IP)
-sudo androcontrol-ctl revoke <id-or-name>  # revoke one device (by ID or name)
-sudo androcontrol-ctl revoke-all           # revoke every device
-sudo androcontrol-ctl cleanup              # drop revoked devices from the registry
+sudo androcontrol-ctl list                  # list devices (id, name, status, last seen, IP)
+sudo androcontrol-ctl revoke <id-or-name>   # revoke one device (by ID or name)
+sudo androcontrol-ctl revoke-all            # revoke every device
+sudo androcontrol-ctl rename <id> <name>    # rename a device
+sudo androcontrol-ctl prune-inactive <days> # drop devices not seen in N days
+sudo androcontrol-ctl cleanup               # drop revoked devices from the registry
 ```
 
 The NixOS module installs `androcontrol-ctl` automatically. For the plain systemd
@@ -140,13 +145,30 @@ Revoked devices are also **pruned automatically once a day** while the server ru
 - Toggle **Ctrl/Alt/Shift/Win** modifiers for key combinations
 - Special keys: Tab, Esc, Arrow keys, Home, End, Delete, F1-F12
 
+### Background operation
+While connected, the app runs a foreground service (with an ongoing notification and
+a "Disconnect" action) and holds a partial wake lock, so the session stays alive when
+the app is backgrounded or the screen is off. Allow the notification permission when
+prompted so the status is visible.
+
+### This device / unpairing
+- **Settings → This device** shows this install's name and device ID.
+- To unpair, open a server's **Edit** dialog and tap **Unpair**. If you're connected to
+  that server the server revokes this device immediately; otherwise the pairing is
+  removed locally (revoke it on the server too if it's still listed).
+
 ## Security
 
 ### TLS Encryption
 All communication between the app and server is encrypted using TLS 1.2 or 1.3. The server generates a self-signed certificate on first run.
 
 ### Certificate Pinning (TOFU)
-On first connection, the app displays the server's certificate fingerprint for verification. Once accepted, the fingerprint is saved and verified on subsequent connections. If the certificate changes, you'll receive a warning.
+On first connection, the app displays the server's certificate fingerprint for verification. Once accepted, the fingerprint is saved and verified on subsequent connections. If the certificate changes, you'll receive a warning. Pinning is **fail-closed** — the app never silently trusts an unverified certificate.
+
+### Brute-force protection
+Repeated failed pairing/authentication attempts from an IP are rate-limited: after
+5 failures within 5 minutes the IP is locked out for 15 minutes. All pairing and
+authentication events are written to the log with an `[AUDIT]` prefix.
 
 ### Per-device Authentication
 The server generates a long-lived **enrollment (pairing) token** on first run. A device
@@ -160,8 +182,10 @@ per-device token**, which the app stores (Android Keystore, AES-GCM). Per-device
 Anyone with the enrollment token can pair a new device, so treat the QR code / token
 as a secret and rotate it (delete `auth_token` and restart) if it leaks.
 
-### Session Management
-Each authenticated connection receives a session token with a 30-minute TTL. Sessions are automatically refreshed during active use.
+### Connection lifecycle
+The authenticated TLS connection is the trust boundary. Idle connections are closed
+by a server-side read deadline, and the client sends periodic heartbeats (PING/PONG)
+to keep an active connection alive and detect drops.
 
 ## Network Configuration
 
@@ -220,21 +244,27 @@ The APK will be in `Frontend/app/build/outputs/apk/debug/`.
 ```
 AndroControl/
 ├── Backend-GO/           # Go server
-│   ├── main.go          # Main entry point, uinput handling
-│   ├── auth.go          # Token authentication
-│   ├── session.go       # Session management
+│   ├── main.go          # Entry point, handshake, command loop, uinput
+│   ├── auth.go          # Enrollment-token authentication
+│   ├── devices.go       # Per-device registry (pairing/revocation)
+│   ├── auththrottle.go  # Failed-attempt lockout
+│   ├── logging.go       # Leveled logging
 │   ├── tls.go           # TLS certificate handling
 │   ├── protocol.go      # Command protocol
 │   ├── validation.go    # Input validation
 │   ├── ratelimit.go     # Rate limiting
 │   ├── qrcode.go        # QR code generation
-│   └── connmanager.go   # Connection management
+│   ├── connmanager.go   # Connection management
+│   └── deploy/          # systemd unit, udev rule, androcontrol-ctl
 ├── Frontend/             # Android app
 │   └── app/src/main/java/com/aranaj/androcontrol/
 │       ├── MainActivity.java      # Main UI and controls
+│       ├── ConnectionService.java # Foreground service (background persistence)
+│       ├── SettingsActivity.java  # Settings + device info
+│       ├── SettingsManager.java   # Preferences + client device id
 │       ├── TlsHelper.java         # TLS/TOFU implementation
 │       ├── SecureStorage.java     # Encrypted storage
-│       ├── Protocol.java          # Communication protocol
+│       ├── Protocol.java          # Communication protocol (pair/auth/unpair)
 │       ├── HeartbeatManager.java  # Connection health
 │       ├── Server.java            # Server model
 │       ├── ServerManager.java     # Server persistence
@@ -261,6 +291,21 @@ AndroControl/
 ### Input not working
 - Ensure the server has permissions to use uinput
 - Check server logs for error messages
+
+## Versioning
+
+- **App:** `versionName` in `Frontend/app/build.gradle.kts`.
+- **Wire protocol:** `ProtocolVersion` in `Backend-GO/protocol.go` (client and server
+  negotiate compatibility on connect).
+- **Releases** are tagged `vX.Y.Z`; pushing a tag builds and publishes the Linux
+  server binaries (see `.github/workflows/release.yml`).
+
+Keep the app version and protocol version in step when changing the wire format.
+
+## Privacy
+
+AndroControl is self-hosted and collects no data for the developers. See
+[PRIVACY.md](PRIVACY.md) for the full policy (required for the Play Store listing).
 
 ## License
 

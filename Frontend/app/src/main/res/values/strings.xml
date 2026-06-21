@@ -99,6 +99,24 @@
     <string name="msg_auth_failed">Authentication failed</string>
     <string name="msg_pairing_failed">Pairing failed. Check the pairing token and try again.</string>
     <string name="msg_device_revoked">This device\'s access was revoked. Re-pair with a pairing token.</string>
+    <string name="msg_locked">Too many failed attempts. The server locked out this network — try again later.</string>
+
+    <!-- Foreground connection service -->
+    <string name="notif_channel_name">Active connection</string>
+    <string name="notif_channel_desc">Shown while connected to a server</string>
+    <string name="notif_connected_title">AndroControl connected</string>
+    <string name="notif_connected_text">Controlling %1$s</string>
+    <string name="notif_disconnect">Disconnect</string>
+
+    <!-- Device management -->
+    <string name="settings_this_device">This device</string>
+    <string name="settings_device_name">Name</string>
+    <string name="settings_device_id">Device ID</string>
+    <string name="action_unpair">Unpair</string>
+    <string name="dialog_unpair_title">Unpair this device?</string>
+    <string name="dialog_unpair_message">Remove this device\'s pairing with \"%1$s\". You\'ll need a pairing token to reconnect. If connected, the server will revoke it immediately; otherwise revoke it on the server.</string>
+    <string name="msg_unpaired">Unpaired from this device</string>
+    <string name="msg_not_paired">This device isn\'t paired with that server</string>
     <string name="msg_connected_to">Connected to %1$s</string>
     <string name="msg_connection_failed">Connection failed: %1$s</string>
     <string name="msg_heartbeat_lost">Connection lost (heartbeat timeout)</string>

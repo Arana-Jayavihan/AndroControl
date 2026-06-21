@@ -38,7 +38,7 @@ public class Protocol {
     private HeartbeatManager heartbeatManager;
     private final AtomicBoolean running;
     private Thread responseThread;
-    private volatile String sessionToken; // Session token from server (v1.1+)
+    private volatile boolean lastAttemptLocked; // server returned AUTH:LOCKED on last auth/pair
 
     public interface ProtocolListener {
         void onConnectionLost();
@@ -76,19 +76,11 @@ public class Protocol {
         pendingMessages.clear();
         writer = null;
         reader = null;
-        sessionToken = null;
 
         // Recreate executor if shutdown
         if (executor.isShutdown()) {
             executor = Executors.newFixedThreadPool(2);
         }
-    }
-
-    /**
-     * Gets the current session token (for session-based auth).
-     */
-    public String getSessionToken() {
-        return sessionToken;
     }
 
     /**
@@ -161,6 +153,7 @@ public class Protocol {
     public boolean authenticate(char[] token) {
         if (writer == null || token == null) return false;
 
+        lastAttemptLocked = false;
         try {
             // Build auth message
             char[] prefix = "AUTH:".toCharArray();
@@ -185,13 +178,12 @@ public class Protocol {
             response = response.trim();
             Log.d(TAG, "Auth response: " + (response.startsWith("AUTH:") ? response.substring(0, Math.min(response.length(), 15)) : response));
 
-            // Handle new protocol: AUTH:OK or AUTH:OK:<session_token>
+            // Success: AUTH:OK (a trailing field from older servers is ignored).
             if (response.equals("AUTH:OK") || response.startsWith("AUTH:OK:")) {
-                if (response.startsWith("AUTH:OK:") && response.length() > 8) {
-                    sessionToken = response.substring(8);
-                    Log.d(TAG, "Session token received");
-                }
                 return true;
+            }
+            if (response.equals("AUTH:LOCKED")) {
+                lastAttemptLocked = true;
             }
             return false;
         } catch (IOException e) {
@@ -219,7 +211,7 @@ public class Protocol {
     /**
      * Pairs this device with the server using the enrollment token.
      * Sends {@code PAIR:<enrollment_token>:<client_device_id>:<device_name>} and
-     * expects {@code PAIR:OK:<device_id>:<device_token>:<session_token>}.
+     * expects {@code PAIR:OK:<device_id>:<device_token>}.
      * The enrollment token array is cleared after use.
      *
      * The client device id lets the server recognise a re-pairing device and
@@ -230,6 +222,7 @@ public class Protocol {
     public PairResult pair(char[] enrollToken, String clientDeviceId, String deviceName) {
         if (writer == null || enrollToken == null) return null;
 
+        lastAttemptLocked = false;
         try {
             String safeName = sanitizeDeviceName(deviceName);
             String safeId = clientDeviceId != null ? clientDeviceId : "";
@@ -255,14 +248,16 @@ public class Protocol {
             Log.d(TAG, "Pair response: " + (response.startsWith("PAIR:OK") ? "PAIR:OK" : response));
 
             if (response.startsWith("PAIR:OK:")) {
-                // PAIR:OK:<device_id>:<device_token>:<session_token>
+                // PAIR:OK:<device_id>:<device_token>  (older servers may append a 5th field — ignored)
                 String[] parts = response.split(":");
-                if (parts.length >= 5) {
+                if (parts.length >= 4) {
                     String deviceId = parts[2];
                     String deviceToken = parts[3];
-                    sessionToken = parts[4];
                     return new PairResult(deviceId, deviceToken.toCharArray());
                 }
+            }
+            if (response.equals("AUTH:LOCKED")) {
+                lastAttemptLocked = true;
             }
             return null;
         } catch (IOException e) {
@@ -270,6 +265,29 @@ public class Protocol {
             return null;
         } finally {
             SecureStorage.clearCharArray(enrollToken);
+        }
+    }
+
+    /** Whether the last authenticate()/pair() failed because the server locked out this IP. */
+    public boolean wasLastAttemptLocked() {
+        return lastAttemptLocked;
+    }
+
+    /**
+     * Asks the server to revoke this device (fire-and-forget). The server revokes
+     * the device tied to this connection and closes it. Call on a background thread.
+     */
+    public void sendUnpair() {
+        PrintWriter w = writer;
+        if (w != null) {
+            try {
+                synchronized (w) {
+                    w.println("UNPAIR");
+                    w.flush();
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to send unpair", e);
+            }
         }
     }
 

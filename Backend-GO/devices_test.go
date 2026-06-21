@@ -3,6 +3,7 @@ package main
 import (
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func newTestDeviceManager(t *testing.T) *DeviceManager {
@@ -172,6 +173,43 @@ func TestDeviceCleanupRevoked(t *testing.T) {
 	}
 	if dm2.Count() != 1 {
 		t.Errorf("cleanup should persist; expected 1 after reload, got %d", dm2.Count())
+	}
+}
+
+func TestDeviceRename(t *testing.T) {
+	dm := newTestDeviceManager(t)
+	id, _, _ := dm.Register("c1", "Old Name", "1.1.1.1")
+
+	if !dm.Rename(id, "New Name") {
+		t.Fatal("Rename should succeed for a known id")
+	}
+	dm.mu.RLock()
+	got := dm.devices[id].Name
+	dm.mu.RUnlock()
+	if got != "New Name" {
+		t.Errorf("expected renamed device, got %q", got)
+	}
+	if dm.Rename("nope", "x") {
+		t.Error("Rename should fail for unknown id")
+	}
+}
+
+func TestDevicePruneInactive(t *testing.T) {
+	dm := newTestDeviceManager(t)
+	staleID, _, _ := dm.Register("c1", "Stale", "1.1.1.1")
+	_, liveToken, _ := dm.Register("c2", "Live", "1.1.1.2")
+
+	// Make the first device look old.
+	dm.mu.Lock()
+	dm.devices[staleID].LastSeen = time.Now().Add(-48 * time.Hour)
+	dm.mu.Unlock()
+
+	removed := dm.PruneInactive(24 * time.Hour)
+	if removed != 1 {
+		t.Errorf("expected 1 pruned, got %d", removed)
+	}
+	if dm.ValidateToken(liveToken) == nil {
+		t.Error("recently-seen device should survive pruning")
 	}
 }
 
