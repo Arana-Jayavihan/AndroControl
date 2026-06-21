@@ -9,6 +9,8 @@ import android.util.Log;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.KeyEvent;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.inputmethod.InputMethodManager;
 import android.view.inputmethod.EditorInfo;
 
@@ -20,7 +22,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import android.view.MotionEvent;
 import android.view.View;
-import android.widget.EditText;
+import android.view.ViewGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.ToggleButton;
@@ -29,6 +31,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
 import android.content.Intent;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -70,8 +73,23 @@ public class MainActivity extends AppCompatActivity implements
     // Keyboard panel
     private MaterialCardView keyboardPanel;
     private MaterialButton btnToggleKeyboard;
+    private MaterialButton btnSystemKeyboard;
+    private MaterialButton btnReconnect;
     private TextInputEditText textInput;
     private ToggleButton btnCtrl, btnAlt, btnShift, btnWin;
+    private boolean systemKeyboardVisible = false;
+
+    // Edge scroll zones (the touchpad's own left/right edges)
+    private View scrollZoneLeft, scrollZoneRight;
+    private int scrollZoneWidthPx = 0;
+    private boolean scrollLeftEnabled = false;
+    private boolean scrollRightEnabled = false;
+    private int scrollDirectionFactor = 1;
+    private boolean edgeScrolling = false;
+    private float edgeLastY = 0f;
+
+    // Settings
+    private SettingsManager settingsManager;
 
     private String serverIp = "";
     private int serverPort = 5050;
@@ -106,6 +124,9 @@ public class MainActivity extends AppCompatActivity implements
     private ServerAdapter serverAdapter;
     private RecyclerView serverList;
     private Server currentServer;
+    // Server to auto-reconnect to when the app returns to the foreground.
+    // Set on a successful connect; cleared only on a deliberate user disconnect.
+    private Server reconnectTarget;
 
     // Security components
     private TlsHelper tlsHelper;
@@ -155,6 +176,10 @@ public class MainActivity extends AppCompatActivity implements
                     WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
             Insets ime = windowInsets.getInsets(WindowInsetsCompat.Type.ime());
             v.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
+            // Keep the "system keyboard" toggle in sync if the IME is dismissed by the user.
+            boolean imeVisible = windowInsets.isVisible(WindowInsetsCompat.Type.ime());
+            systemKeyboardVisible = imeVisible;
+            updateSystemKeyboardButton();
             return windowInsets;
         });
 
@@ -188,14 +213,23 @@ public class MainActivity extends AppCompatActivity implements
         // Keyboard panel
         keyboardPanel = findViewById(R.id.keyboardPanel);
         btnToggleKeyboard = findViewById(R.id.btnToggleKeyboard);
+        btnSystemKeyboard = findViewById(R.id.btnSystemKeyboard);
+        btnReconnect = findViewById(R.id.btnReconnect);
         textInput = findViewById(R.id.textInput);
         btnCtrl = findViewById(R.id.btnCtrl);
         btnAlt = findViewById(R.id.btnAlt);
         btnShift = findViewById(R.id.btnShift);
         btnWin = findViewById(R.id.btnWin);
 
+        // Edge scroll zones
+        scrollZoneLeft = findViewById(R.id.scrollZoneLeft);
+        scrollZoneRight = findViewById(R.id.scrollZoneRight);
+
         executorService = Executors.newFixedThreadPool(3);
         mainHandler = new Handler(Looper.getMainLooper());
+
+        // Settings
+        settingsManager = new SettingsManager(this);
 
         // Initialize security components
         secureStorage = new SecureStorage(this);
@@ -227,6 +261,8 @@ public class MainActivity extends AppCompatActivity implements
 
             @Override
             public void onDisconnect(int position) {
+                // Deliberate user disconnect — don't auto-reconnect on the next resume.
+                reconnectTarget = null;
                 disconnectFromServer();
             }
 
@@ -239,6 +275,8 @@ public class MainActivity extends AppCompatActivity implements
             public void onDelete(int position) {
                 Server server = serverManager.getServers().get(position);
                 secureStorage.removeToken(server.getId());
+                secureStorage.removeDeviceToken(server.getId());
+                secureStorage.removeDeviceId(server.getId());
                 serverManager.removeServer(position);
                 serverAdapter.notifyItemRemoved(position);
             }
@@ -262,31 +300,128 @@ public class MainActivity extends AppCompatActivity implements
         setupTouchPad();
         setupClickButtons();
         setupKeyboardPanel();
+        setupControlButtons();
+        applyScrollbarSettings();
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.main_menu, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == R.id.action_settings) {
+            startActivity(new Intent(this, SettingsActivity.class));
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    /**
+     * Wires the control-row buttons: system keyboard toggle and quick reconnect.
+     * (The on-screen keyboard panel toggle is wired in {@link #setupKeyboardPanel()}.)
+     */
+    private void setupControlButtons() {
+        if (btnSystemKeyboard != null) {
+            btnSystemKeyboard.setOnClickListener(v -> toggleSystemKeyboard());
+        }
+        if (btnReconnect != null) {
+            btnReconnect.setOnClickListener(v -> reconnectLastServer());
+        }
+    }
+
+    /** Shows or hides the Android system (IME) keyboard, independent of the on-screen panel. */
+    private void toggleSystemKeyboard() {
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm == null || textInput == null) return;
+
+        if (systemKeyboardVisible) {
+            imm.hideSoftInputFromWindow(textInput.getWindowToken(), 0);
+            systemKeyboardVisible = false;
+        } else {
+            textInput.requestFocus();
+            imm.showSoftInput(textInput, InputMethodManager.SHOW_IMPLICIT);
+            systemKeyboardVisible = true;
+        }
+        updateSystemKeyboardButton();
+    }
+
+    /** Reflects the current system-keyboard state in the toggle button. */
+    private void updateSystemKeyboardButton() {
+        if (btnSystemKeyboard != null) {
+            btnSystemKeyboard.setChecked(systemKeyboardVisible);
+        }
+    }
+
+    /** A human-readable name for this device, sent to the server during pairing. */
+    private String getDeviceName() {
+        String name = android.os.Build.MODEL;
+        if (name == null || name.trim().isEmpty()) {
+            name = android.os.Build.MANUFACTURER;
+        }
+        if (name == null || name.trim().isEmpty()) {
+            name = "Android device";
+        }
+        return name.trim();
+    }
+
+    /** Reconnects to the most recently connected server (the quick-reconnect button). */
+    private void reconnectLastServer() {
+        Server target = (currentServer != null) ? currentServer : serverManager.getRecentServer();
+        if (target == null) {
+            Toast.makeText(this, R.string.msg_no_recent_server, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        char[] token = secureStorage.getTokenAsChars(target.getId());
+        if (token != null) {
+            target.setAuthTokenChars(token);
+            SecureStorage.clearCharArray(token);
+        }
+        Toast.makeText(this, getString(R.string.msg_reconnecting_to, target.getName()), Toast.LENGTH_SHORT).show();
+        connectToServer(target);
+    }
+
+    /**
+     * Applies the saved scroll-zone position, width and direction to the touchpad edges.
+     * Safe to call repeatedly (e.g. on resume after returning from Settings).
+     */
+    private void applyScrollbarSettings() {
+        scrollLeftEnabled = settingsManager.isScrollbarOnLeft();
+        scrollRightEnabled = settingsManager.isScrollbarOnRight();
+        scrollDirectionFactor = settingsManager.getScrollDirectionFactor();
+        scrollZoneWidthPx = Math.round(
+                settingsManager.getScrollbarWidthDp() * getResources().getDisplayMetrics().density);
+
+        configureScrollZone(scrollZoneLeft, scrollLeftEnabled, scrollZoneWidthPx);
+        configureScrollZone(scrollZoneRight, scrollRightEnabled, scrollZoneWidthPx);
+    }
+
+    private void configureScrollZone(View zone, boolean visible, int widthPx) {
+        if (zone == null) return;
+        zone.setVisibility(visible ? View.VISIBLE : View.GONE);
+        ViewGroup.LayoutParams lp = zone.getLayoutParams();
+        lp.width = widthPx;
+        zone.setLayoutParams(lp);
+    }
+
+    /** @return true if a touch at the given X (within the touchpad) falls in an active scroll zone. */
+    private boolean isInScrollZone(float x) {
+        if (scrollZoneWidthPx <= 0) return false;
+        int w = touchPad.getWidth();
+        if (scrollLeftEnabled && x <= scrollZoneWidthPx) return true;
+        if (scrollRightEnabled && x >= w - scrollZoneWidthPx) return true;
+        return false;
     }
 
     private void setupKeyboardPanel() {
-        // Toggle keyboard panel and native keyboard
+        // Toggle ONLY the on-screen QWERTY panel (system keyboard has its own button).
         btnToggleKeyboard.setOnClickListener(v -> {
-            if (keyboardPanel.getVisibility() == View.VISIBLE) {
-                keyboardPanel.setVisibility(View.GONE);
-                btnToggleKeyboard.setText(R.string.btn_keyboard);
-                // Hide native keyboard
-                InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-                if (imm != null && textInput != null) {
-                    imm.hideSoftInputFromWindow(textInput.getWindowToken(), 0);
-                }
-            } else {
-                keyboardPanel.setVisibility(View.VISIBLE);
-                btnToggleKeyboard.setText(R.string.btn_hide_keyboard);
-                // Show native keyboard
-                if (textInput != null) {
-                    textInput.requestFocus();
-                    InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-                    if (imm != null) {
-                        imm.showSoftInput(textInput, InputMethodManager.SHOW_IMPLICIT);
-                    }
-                }
-            }
+            boolean show = keyboardPanel.getVisibility() != View.VISIBLE;
+            keyboardPanel.setVisibility(show ? View.VISIBLE : View.GONE);
+            btnToggleKeyboard.setText(show ? R.string.btn_hide : R.string.btn_onscreen_keyboard);
         });
 
         // Native keyboard input - send characters directly without displaying
@@ -517,12 +652,17 @@ public class MainActivity extends AppCompatActivity implements
 
     private void vibrate(int durationMs) {
         try {
-            if (vibrator != null && vibrator.hasVibrator()) {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE));
-                } else {
-                    vibrator.vibrate(durationMs);
-                }
+            if (vibrator == null || !vibrator.hasVibrator()) return;
+
+            int amplitude = settingsManager.getHapticAmplitude();
+            if (amplitude <= 0) return; // Haptics disabled by user
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                // Honour the configured intensity where the device supports amplitude control.
+                int amp = vibrator.hasAmplitudeControl() ? amplitude : VibrationEffect.DEFAULT_AMPLITUDE;
+                vibrator.vibrate(VibrationEffect.createOneShot(durationMs, amp));
+            } else {
+                vibrator.vibrate(durationMs);
             }
         } catch (SecurityException e) {
             // Permission not granted - disable vibration silently
@@ -570,7 +710,7 @@ public class MainActivity extends AppCompatActivity implements
                     float deltaY = lastScrollY - currentY;
 
                     if (Math.abs(deltaY) > SCROLL_THRESHOLD) {
-                        int scrollAmount = (int)(deltaY * SCROLL_SENSITIVITY);
+                        int scrollAmount = (int)(deltaY * SCROLL_SENSITIVITY) * scrollDirectionFactor;
                         sendScroll(scrollAmount);
                         lastScrollY = currentY;
                     }
@@ -590,6 +730,13 @@ public class MainActivity extends AppCompatActivity implements
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
                 touchPad.setPressed(true);
+                // If the touch starts on a configured edge, treat it as a scroll gesture.
+                if (isInScrollZone(event.getX())) {
+                    edgeScrolling = true;
+                    edgeLastY = event.getY();
+                    return true;
+                }
+                edgeScrolling = false;
                 touchStartTime = System.currentTimeMillis();
                 lastX = event.getX();
                 lastY = event.getY();
@@ -601,6 +748,18 @@ public class MainActivity extends AppCompatActivity implements
                 return true;
 
             case MotionEvent.ACTION_MOVE:
+                if (edgeScrolling) {
+                    float currentY = event.getY();
+                    float edgeDelta = edgeLastY - currentY;
+                    if (Math.abs(edgeDelta) > SCROLL_THRESHOLD) {
+                        int scrollAmount = (int) (edgeDelta * SCROLL_SENSITIVITY) * scrollDirectionFactor;
+                        if (scrollAmount != 0) {
+                            sendScroll(scrollAmount);
+                        }
+                        edgeLastY = currentY;
+                    }
+                    return true;
+                }
                 float deltaX = event.getX() - lastX;
                 float deltaY = event.getY() - lastY;
 
@@ -625,6 +784,11 @@ public class MainActivity extends AppCompatActivity implements
 
             case MotionEvent.ACTION_UP:
                 touchPad.setPressed(false);
+                if (edgeScrolling) {
+                    // Edge scroll gesture — no click handling.
+                    edgeScrolling = false;
+                    return true;
+                }
                 sendAccumulatedMovement();
 
                 long touchDuration = System.currentTimeMillis() - touchStartTime;
@@ -750,7 +914,7 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     private void showAddServerDialog() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        AlertDialog.Builder builder = new MaterialAlertDialogBuilder(this);
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_add_server, null);
 
         TextInputEditText nameInput = dialogView.findViewById(R.id.serverNameInput);
@@ -802,7 +966,7 @@ public class MainActivity extends AppCompatActivity implements
 
     private void showEditServerDialog(int position) {
         Server server = serverManager.getServers().get(position);
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        AlertDialog.Builder builder = new MaterialAlertDialogBuilder(this);
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_add_server, null);
 
         TextInputEditText nameInput = dialogView.findViewById(R.id.serverNameInput);
@@ -868,7 +1032,8 @@ public class MainActivity extends AppCompatActivity implements
      * Called at the start of executor block in connectToServer().
      */
     private void disconnectPreviousServerOnBackground(Server oldServer, SSLSocket oldSocket,
-                                                       PrintWriter oldOut, BufferedReader oldIn) {
+                                                       PrintWriter oldOut, BufferedReader oldIn,
+                                                       boolean clearOldToken) {
         try {
             // Stop heartbeat
             if (heartbeatManager != null) {
@@ -900,7 +1065,11 @@ public class MainActivity extends AppCompatActivity implements
                 updateStatusBar(false, null);
                 if (oldServer != null) {
                     oldServer.setConnected(false);
-                    oldServer.clearAuthToken();
+                    // Don't wipe the token when reconnecting to the SAME server object —
+                    // the in-progress connection still needs it to authenticate.
+                    if (clearOldToken) {
+                        oldServer.clearAuthToken();
+                    }
                 }
                 if (serverAdapter != null) {
                     serverAdapter.notifyDataSetChanged();
@@ -1022,7 +1191,10 @@ public class MainActivity extends AppCompatActivity implements
             try {
                 // Disconnect from previous server first (now on background thread - safe!)
                 if (needsDisconnect) {
-                    disconnectPreviousServerOnBackground(previousServer, previousSocket, previousOut, previousIn);
+                    // Only clear the old token if we're switching to a DIFFERENT server object;
+                    // reconnecting to the same one must keep its token for re-authentication.
+                    disconnectPreviousServerOnBackground(previousServer, previousSocket, previousOut, previousIn,
+                            previousServer != server);
                 } else if (previousSocket != null && !previousSocket.isClosed()) {
                     // Close any leftover socket
                     try {
@@ -1062,35 +1234,69 @@ public class MainActivity extends AppCompatActivity implements
 
                 protocol.setStreams(out, in);
 
-                char[] token = server.getAuthTokenChars();
-                if (token == null || token.length == 0) {
-                    synchronized (connectionLock) {
-                        if (currentServer == server) {
-                            isConnecting = false;
-                        }
-                    }
-                    mainHandler.post(() -> {
-                        Toast.makeText(this, R.string.msg_no_token, Toast.LENGTH_SHORT).show();
-                        showTokenInputDialog(server);
-                    });
-                    socket.close();
-                    return;
-                }
+                // Per-device authentication:
+                //  - If we already have a per-device token, authenticate with it.
+                //  - Otherwise pair using the enrollment token to obtain one.
+                char[] deviceToken = secureStorage.getDeviceTokenAsChars(server.getId());
 
-                // Note: authenticate() clears the token array after use
-                if (!protocol.authenticate(token)) {
-                    synchronized (connectionLock) {
-                        if (currentServer == server) {
-                            isConnecting = false;
+                if (deviceToken != null) {
+                    // authenticate() clears the token array after use.
+                    if (!protocol.authenticate(deviceToken)) {
+                        // Rejected — device likely revoked or the server was reset.
+                        secureStorage.removeDeviceToken(server.getId());
+                        secureStorage.removeDeviceId(server.getId());
+                        synchronized (connectionLock) {
+                            if (currentServer == server) {
+                                isConnecting = false;
+                            }
                         }
+                        mainHandler.post(() -> {
+                            Toast.makeText(this, R.string.msg_device_revoked, Toast.LENGTH_LONG).show();
+                            server.setConnected(false);
+                            serverAdapter.notifyDataSetChanged();
+                            showTokenInputDialog(server);
+                        });
+                        socket.close();
+                        return;
                     }
-                    mainHandler.post(() -> {
-                        Toast.makeText(this, R.string.msg_auth_failed, Toast.LENGTH_LONG).show();
-                        server.setConnected(false);
-                        serverAdapter.notifyDataSetChanged();
-                    });
-                    socket.close();
-                    return;
+                } else {
+                    char[] enrollToken = server.getAuthTokenChars();
+                    if (enrollToken == null || enrollToken.length == 0) {
+                        synchronized (connectionLock) {
+                            if (currentServer == server) {
+                                isConnecting = false;
+                            }
+                        }
+                        mainHandler.post(() -> {
+                            Toast.makeText(this, R.string.msg_no_token, Toast.LENGTH_SHORT).show();
+                            showTokenInputDialog(server);
+                        });
+                        socket.close();
+                        return;
+                    }
+
+                    // pair() clears the enrollment token array after use.
+                    Protocol.PairResult pairResult = protocol.pair(enrollToken, getDeviceName());
+                    if (pairResult == null) {
+                        synchronized (connectionLock) {
+                            if (currentServer == server) {
+                                isConnecting = false;
+                            }
+                        }
+                        mainHandler.post(() -> {
+                            Toast.makeText(this, R.string.msg_pairing_failed, Toast.LENGTH_LONG).show();
+                            server.setConnected(false);
+                            serverAdapter.notifyDataSetChanged();
+                        });
+                        socket.close();
+                        return;
+                    }
+
+                    // Persist the per-device token and discard the enrollment token.
+                    secureStorage.saveDeviceTokenFromChars(server.getId(), pairResult.deviceToken);
+                    secureStorage.saveDeviceId(server.getId(), pairResult.deviceId);
+                    secureStorage.removeToken(server.getId());
+                    server.clearAuthToken();
                 }
 
                 // Final check before completing connection
@@ -1121,6 +1327,8 @@ public class MainActivity extends AppCompatActivity implements
                         Toast.makeText(this, getString(R.string.msg_connected_to, server.getName()), Toast.LENGTH_SHORT).show();
                         server.setConnected(true);
                         serverManager.setLastConnectedServer(server.getId());
+                        serverManager.setRecentServer(server.getId());
+                        reconnectTarget = server;
                         serverAdapter.notifyDataSetChanged();
                     }
                 });
@@ -1128,7 +1336,7 @@ public class MainActivity extends AppCompatActivity implements
             } catch (IOException | NoSuchAlgorithmException | KeyManagementException e) {
                 // Only reset isConnecting if this is still the current connection attempt
                 synchronized (connectionLock) {
-                    if (currentServer == server) {
+                     if (currentServer == server) {
                         isConnecting = false;
                     }
                 }
@@ -1254,7 +1462,7 @@ public class MainActivity extends AppCompatActivity implements
         pendingCertificateReject = onReject;
 
         try {
-            currentCertificateDialog = new AlertDialog.Builder(this)
+            currentCertificateDialog = new MaterialAlertDialogBuilder(this)
                     .setTitle(R.string.dialog_cert_verify_title)
                     .setMessage(getString(R.string.dialog_cert_verify_message,
                             server.getName(), formatFingerprintForDisplay(fingerprint)))
@@ -1307,7 +1515,7 @@ public class MainActivity extends AppCompatActivity implements
         pendingCertificateReject = onReject;
 
         try {
-            currentCertificateDialog = new AlertDialog.Builder(this)
+            currentCertificateDialog = new MaterialAlertDialogBuilder(this)
                     .setTitle(R.string.dialog_cert_warning_title)
                     .setIcon(android.R.drawable.ic_dialog_alert)
                     .setMessage(getString(R.string.dialog_cert_warning_message,
@@ -1388,15 +1596,15 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     private void showTokenInputDialog(Server server) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        EditText tokenInput = new EditText(this);
-        tokenInput.setHint(R.string.hint_enter_token);
+        View dialogView = getLayoutInflater().inflate(R.layout.dialog_token_input, null);
+        TextInputEditText tokenInput = dialogView.findViewById(R.id.tokenInput);
 
-        builder.setTitle(R.string.dialog_auth_title)
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.dialog_auth_title)
                 .setMessage(R.string.dialog_auth_message)
-                .setView(tokenInput)
+                .setView(dialogView)
                 .setPositiveButton(R.string.btn_connect, (dialog, which) -> {
-                    String token = tokenInput.getText().toString();
+                    String token = tokenInput.getText() != null ? tokenInput.getText().toString() : "";
                     if (!token.isEmpty()) {
                         secureStorage.saveToken(server.getId(), token);
                         server.setAuthToken(token);
@@ -1519,14 +1727,18 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     protected void onResume() {
         super.onResume();
-        // Only auto-reconnect if not already connecting and socket is closed
-        if (!isConnecting && currentServer != null && (socket == null || socket.isClosed())) {
-            char[] token = secureStorage.getTokenAsChars(currentServer.getId());
+        // Re-apply scroll-bar preferences in case they changed in Settings.
+        applyScrollbarSettings();
+        // Auto-reconnect to the last connected server when returning to the foreground
+        // (e.g. after the app was minimized). connectToServer() shows a toast on failure.
+        if (!isConnecting && reconnectTarget != null && (socket == null || socket.isClosed())) {
+            Server target = reconnectTarget;
+            char[] token = secureStorage.getTokenAsChars(target.getId());
             if (token != null) {
-                currentServer.setAuthTokenChars(token);
+                target.setAuthTokenChars(token);
                 SecureStorage.clearCharArray(token);
             }
-            connectToServer(currentServer);
+            connectToServer(target);
         }
     }
 
@@ -1568,7 +1780,7 @@ public class MainActivity extends AppCompatActivity implements
                 // Server exists - offer to connect
                 Toast.makeText(this, R.string.msg_server_exists, Toast.LENGTH_SHORT).show();
                 if (isFinishing() || isDestroyed()) return;
-                new AlertDialog.Builder(this)
+                new MaterialAlertDialogBuilder(this)
                         .setTitle(R.string.dialog_server_exists_title)
                         .setMessage(getString(R.string.dialog_server_exists_message, existingServer.getName(), ip, port))
                         .setPositiveButton(R.string.btn_connect, (dialog, which) -> {
@@ -1601,7 +1813,7 @@ public class MainActivity extends AppCompatActivity implements
 
             // Ask if user wants to connect immediately
             if (isFinishing() || isDestroyed()) return;
-            new AlertDialog.Builder(this)
+            new MaterialAlertDialogBuilder(this)
                     .setTitle(R.string.dialog_connect_now_title)
                     .setMessage(getString(R.string.dialog_connect_now_message, name))
                     .setPositiveButton(R.string.btn_connect, (dialog, which) -> {

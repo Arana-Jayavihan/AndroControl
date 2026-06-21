@@ -21,8 +21,8 @@
 
             vendorHash = null; # Uses vendored dependencies
 
-            # Skip tests as they may require uinput access
-            doCheck = false;
+            # Unit tests are pure logic (no uinput / network), so run them at build time.
+            doCheck = true;
 
             meta = with pkgs.lib; {
               description = "Secure remote mouse/keyboard control server for Linux";
@@ -73,10 +73,19 @@
                 description = "Port to listen on";
               };
 
+              bindAddress = lib.mkOption {
+                type = lib.types.str;
+                default = "0.0.0.0";
+                description = ''
+                  Address to bind to. Use "127.0.0.1" to restrict to loopback
+                  (e.g. when exposing only over a VPN or SSH tunnel).
+                '';
+              };
+
               dataDir = lib.mkOption {
                 type = lib.types.path;
                 default = "/var/lib/androcontrol";
-                description = "Directory to store certificates and auth token";
+                description = "Directory for TLS certificates, the enrollment token, and the paired-device registry (devices.json)";
               };
 
               openFirewall = lib.mkOption {
@@ -126,7 +135,7 @@
                   User = cfg.user;
                   Group = cfg.group;
                   WorkingDirectory = cfg.dataDir;
-                  ExecStart = "${cfg.package}/bin/AndroControl";
+                  ExecStart = "${cfg.package}/bin/AndroControl -addr ${cfg.bindAddress} -port ${toString cfg.port}";
                   Restart = "on-failure";
                   RestartSec = 5;
 
@@ -135,10 +144,14 @@
                   ProtectSystem = "strict";
                   ProtectHome = true;
                   PrivateTmp = true;
+                  ProtectControlGroups = true;
+                  ProtectKernelTunables = true;
+                  RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
                   ReadWritePaths = [ cfg.dataDir ];
 
-                  # Required for uinput
+                  # Required for uinput: only allow the uinput device node.
                   SupplementaryGroups = [ "input" ];
+                  DevicePolicy = "closed";
                   DeviceAllow = [ "/dev/uinput rw" ];
                 };
 

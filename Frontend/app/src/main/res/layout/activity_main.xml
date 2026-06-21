@@ -80,7 +80,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Scrollable / weighted content -->
+        <!-- Weighted content -->
         <LinearLayout
             android:id="@+id/contentContainer"
             android:layout_width="match_parent"
@@ -91,22 +91,183 @@
             android:paddingTop="4dp"
             android:paddingBottom="16dp">
 
-            <!-- Keyboard Toggle -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnToggleKeyboard"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="wrap_content"
-                android:layout_height="42dp"
-                android:layout_gravity="center_horizontal"
-                android:text="@string/btn_keyboard"
-                android:insetTop="0dp"
-                android:insetBottom="0dp"
-                app:icon="@drawable/ic_keyboard"
-                app:iconSize="18dp"
-                app:cornerRadius="21dp"
-                android:layout_marginBottom="10dp"/>
+            <!-- ===================== Touchpad (edges double as scroll zones) ===================== -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                app:cardCornerRadius="24dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/touchpad_stroke"
+                app:strokeWidth="1dp">
 
-            <!-- ===================== Keyboard Panel ===================== -->
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent">
+
+                    <View
+                        android:id="@+id/touchPad"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@drawable/touchpad_modern_bg"/>
+
+                    <!-- Edge scroll-zone indicators (visual only; touches pass through to the
+                         touchpad, which decides scroll-vs-move from the touch position). -->
+                    <View
+                        android:id="@+id/scrollZoneLeft"
+                        android:layout_width="28dp"
+                        android:layout_height="match_parent"
+                        android:layout_gravity="start"
+                        android:background="@drawable/scroll_zone_bg"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:visibility="gone"/>
+
+                    <View
+                        android:id="@+id/scrollZoneRight"
+                        android:layout_width="28dp"
+                        android:layout_height="match_parent"
+                        android:layout_gravity="end"
+                        android:background="@drawable/scroll_zone_bg"
+                        android:clickable="false"
+                        android:focusable="false"
+                        android:visibility="gone"/>
+
+                    <!-- Non-interactive hint overlay (lets touches pass through) -->
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:orientation="vertical"
+                        android:gravity="center"
+                        android:alpha="0.55">
+
+                        <ImageView
+                            android:layout_width="44dp"
+                            android:layout_height="44dp"
+                            android:src="@drawable/ic_touchpad"
+                            android:contentDescription="@string/touchpad_title"/>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="@string/touchpad_title"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="15sp"
+                            android:fontFamily="sans-serif-medium"/>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:gravity="center"
+                            android:text="@string/touchpad_hint"
+                            android:textColor="@color/text_disabled"
+                            android:textSize="11sp"/>
+                    </LinearLayout>
+                </FrameLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ===================== Mouse Buttons (directly below touchpad) ===================== -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:layout_marginTop="12dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnLeftClick"
+                    style="@style/Widget.AndroControl.Button.Mouse.Primary"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/mouse_left"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnMiddleClick"
+                    style="@style/Widget.AndroControl.Button.Mouse"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginHorizontal="8dp"
+                    android:text="@string/mouse_middle"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnRightClick"
+                    style="@style/Widget.AndroControl.Button.Mouse"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/mouse_right"/>
+            </LinearLayout>
+
+            <!-- ===================== Control Button Row ===================== -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:layout_marginTop="10dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnToggleKeyboard"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="44dp"
+                    android:text="@string/btn_onscreen_keyboard"
+                    android:textSize="12sp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    app:icon="@drawable/ic_keyboard"
+                    app:iconSize="18dp"
+                    app:iconGravity="textStart"
+                    app:cornerRadius="14dp"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSystemKeyboard"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="44dp"
+                    android:layout_marginHorizontal="8dp"
+                    android:text="@string/btn_system_keyboard"
+                    android:textSize="12sp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    app:icon="@drawable/ic_smartphone"
+                    app:iconSize="18dp"
+                    app:iconGravity="textStart"
+                    app:cornerRadius="14dp"/>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnReconnect"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="44dp"
+                    android:text="@string/btn_reconnect"
+                    android:textSize="12sp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    app:icon="@drawable/ic_refresh"
+                    app:iconSize="18dp"
+                    app:iconGravity="textStart"
+                    app:cornerRadius="14dp"/>
+            </LinearLayout>
+
+            <!-- Invisible text input for the system keyboard (receives focus but not visible).
+                 Kept outside the on-screen keyboard panel so the system keyboard can be
+                 shown independently of the on-screen QWERTY panel. -->
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/textInput"
+                android:layout_width="1dp"
+                android:layout_height="1dp"
+                android:alpha="0"
+                android:inputType="text"
+                android:imeOptions="actionNone|flagNoEnterAction"
+                android:background="@null"/>
+
+            <!-- ===================== On-screen Keyboard Panel ===================== -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/keyboardPanel"
                 style="@style/Widget.AndroControl.Card"
@@ -118,7 +279,7 @@
                 app:strokeColor="@color/card_stroke"
                 app:strokeWidth="1dp"
                 android:visibility="gone"
-                android:layout_marginBottom="12dp">
+                android:layout_marginTop="12dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -273,105 +434,8 @@
                         <com.google.android.material.button.MaterialButton android:id="@+id/btnDown" style="@style/Widget.AndroControl.Key.Tonal" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:text="@string/key_arrow_down"/>
                         <com.google.android.material.button.MaterialButton android:id="@+id/btnRight" style="@style/Widget.AndroControl.Key.Tonal" android:layout_width="0dp" android:layout_weight="1" android:layout_height="40dp" android:text="@string/key_arrow_right"/>
                     </LinearLayout>
-
-                    <!-- Invisible text input for system keyboard (receives focus but not visible) -->
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/textInput"
-                        android:layout_width="1dp"
-                        android:layout_height="1dp"
-                        android:alpha="0"
-                        android:inputType="text"
-                        android:imeOptions="actionNone|flagNoEnterAction"
-                        android:background="@null"/>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
-
-            <!-- ===================== Touchpad Card ===================== -->
-            <com.google.android.material.card.MaterialCardView
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                app:cardCornerRadius="24dp"
-                app:cardElevation="0dp"
-                app:strokeColor="@color/touchpad_stroke"
-                app:strokeWidth="1dp"
-                android:layout_marginBottom="12dp">
-
-                <FrameLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent">
-
-                    <View
-                        android:id="@+id/touchPad"
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:background="@drawable/touchpad_modern_bg"/>
-
-                    <!-- Non-interactive hint overlay (lets touches pass through) -->
-                    <LinearLayout
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_gravity="center"
-                        android:orientation="vertical"
-                        android:gravity="center"
-                        android:alpha="0.55">
-
-                        <ImageView
-                            android:layout_width="44dp"
-                            android:layout_height="44dp"
-                            android:src="@drawable/ic_touchpad"
-                            android:contentDescription="@string/touchpad_title"/>
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="8dp"
-                            android:text="@string/touchpad_title"
-                            android:textColor="@color/text_secondary"
-                            android:textSize="15sp"
-                            android:fontFamily="sans-serif-medium"/>
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="4dp"
-                            android:gravity="center"
-                            android:text="@string/touchpad_hint"
-                            android:textColor="@color/text_disabled"
-                            android:textSize="11sp"/>
-                    </LinearLayout>
-                </FrameLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <!-- ===================== Mouse Buttons ===================== -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center">
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnLeftClick"
-                    style="@style/Widget.AndroControl.Button.Mouse.Primary"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:text="@string/mouse_left"/>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnMiddleClick"
-                    style="@style/Widget.AndroControl.Button.Mouse"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_marginHorizontal="8dp"
-                    android:text="@string/mouse_middle"/>
-
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnRightClick"
-                    style="@style/Widget.AndroControl.Button.Mouse"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:text="@string/mouse_right"/>
-            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 

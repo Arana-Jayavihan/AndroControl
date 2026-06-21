@@ -15,6 +15,7 @@ public class ServerManager {
     private static final String SERVERS_KEY = "servers";
     private static final String SERVERS_KEY_ENCRYPTED = "servers_encrypted";
     private static final String LAST_CONNECTED_SERVER_KEY = "last_connected_server";
+    private static final String RECENT_SERVER_KEY = "recent_server";
     private static final String MIGRATION_VERSION_KEY = "server_manager_version";
     private static final int CURRENT_VERSION = 2; // Version 2 = encrypted storage
 
@@ -153,5 +154,27 @@ public class ServerManager {
 
     public void clearLastConnectedServer() {
         prefs.edit().remove(LAST_CONNECTED_SERVER_KEY).apply();
+    }
+
+    /**
+     * Records the most recently connected server for the "quick reconnect" button.
+     * Unlike {@link #setLastConnectedServer}, this is NOT cleared on manual disconnect,
+     * so the user can always reconnect to wherever they were last.
+     */
+    public void setRecentServer(String serverId) {
+        prefs.edit().putString(RECENT_SERVER_KEY, serverId).apply();
+    }
+
+    /** Returns the most recently connected server, or null if none/deleted. */
+    public Server getRecentServer() {
+        String recentId = prefs.getString(RECENT_SERVER_KEY, null);
+        if (recentId != null) {
+            for (Server server : servers) {
+                if (recentId.equals(server.getId())) {
+                    return server;
+                }
+            }
+        }
+        return null;
     }
 }

@@ -3,13 +3,16 @@ package main
 import (
 	"bufio"
 	"crypto/tls"
+	"flag"
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/bendahl/uinput"
@@ -37,26 +40,36 @@ var (
 	sessionManager *SessionManager
 	rateLimiters   *ClientRateLimiters
 	tlsConfig      *TLSConfig
+	deviceManager  *DeviceManager
 )
 
 func init() {
-	var err error
-	keyboard, err = uinput.CreateKeyboard("/dev/uinput", []byte("virtual-kbd"))
-	if err != nil {
-		log.Fatalf("Failed to create keyboard: %v", err)
-	}
-
-	mouse, err = uinput.CreateMouse("/dev/uinput", []byte("virtual-mouse"))
-	if err != nil {
-		log.Fatalf("Failed to create mouse: %v", err)
-	}
-
-	// Initialize managers
+	// Initialize managers. Note: the uinput virtual devices are created later in
+	// main() (only when actually starting the server) so that admin commands such
+	// as -list-devices / -revoke can run on machines without /dev/uinput access.
 	connManager = NewConnectionManager()
 	authManager = NewAuthManager()
 	sessionManager = NewSessionManager()
 	rateLimiters = NewClientRateLimiters()
 	tlsConfig = NewTLSConfig()
+	deviceManager = NewDeviceManager()
+}
+
+// initInputDevices creates the virtual keyboard and mouse via uinput.
+// Requires access to /dev/uinput (uinput kernel module + appropriate permissions).
+func initInputDevices() error {
+	var err error
+	keyboard, err = uinput.CreateKeyboard("/dev/uinput", []byte("virtual-kbd"))
+	if err != nil {
+		return fmt.Errorf("failed to create virtual keyboard (is the uinput module loaded and accessible?): %w", err)
+	}
+
+	mouse, err = uinput.CreateMouse("/dev/uinput", []byte("virtual-mouse"))
+	if err != nil {
+		keyboard.Close()
+		return fmt.Errorf("failed to create virtual mouse (is the uinput module loaded and accessible?): %w", err)
+	}
+	return nil
 }
 
 // CharMapping holds the key and whether shift is needed
@@ -376,10 +389,16 @@ func sendResponse(conn net.Conn, response string) error {
 	return err
 }
 
-// authenticateClient handles the authentication handshake
-// Returns the session token on success, empty string on failure
+// authenticateClient handles the authentication handshake.
+// Supports two flows over a single connection:
+//
+//	PAIR:<enrollment_token>:<device_name>  -> registers a new per-device token
+//	AUTH:<device_token>                    -> authenticates an already-paired device
+//
+// On success it creates a session and returns its token; on failure it returns "".
 func authenticateClient(conn net.Conn, reader *bufio.Reader) string {
 	clientID := conn.RemoteAddr().String()
+	clientIP := extractIP(conn.RemoteAddr())
 
 	// Set auth timeout
 	conn.SetReadDeadline(time.Now().Add(AuthTimeoutDuration))
@@ -390,21 +409,67 @@ func authenticateClient(conn net.Conn, reader *bufio.Reader) string {
 		sendResponse(conn, AuthTimeout.String()+"\n")
 		return ""
 	}
+	line = strings.TrimSpace(line)
 
-	token, err := ParseAuthMessage(strings.TrimSpace(line))
+	var device *Device
+
+	if strings.HasPrefix(line, "PAIR:") {
+		// Pairing flow: PAIR:<enrollment_token>:<device_name>
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) < 2 {
+			log.Printf("Invalid pair format from %s", clientID)
+			sendResponse(conn, "PAIR:INVALID\n")
+			return ""
+		}
+		enrollToken := strings.TrimSpace(parts[1])
+		deviceName := ""
+		if len(parts) == 3 {
+			deviceName = parts[2]
+		}
+
+		if !authManager.Validate(enrollToken) {
+			log.Printf("Pairing rejected from %s (bad enrollment token)", clientIP)
+			sendResponse(conn, "PAIR:FAIL\n")
+			return ""
+		}
+
+		id, token, err := deviceManager.Register(deviceName, clientIP)
+		if err != nil {
+			log.Printf("Failed to register device for %s: %v", clientID, err)
+			sendResponse(conn, "PAIR:ERROR\n")
+			return ""
+		}
+
+		session, err := sessionManager.CreateSession(clientID)
+		if err != nil {
+			log.Printf("Failed to create session for %s: %v", clientID, err)
+			sendResponse(conn, "PAIR:ERROR\n")
+			return ""
+		}
+
+		// PAIR:OK:<device_id>:<device_token>:<session_token>
+		sendResponse(conn, fmt.Sprintf("PAIR:OK:%s:%s:%s\n", id, token, session.Token))
+		conn.SetReadDeadline(time.Time{})
+		log.Printf("Paired and authenticated device %s from %s", id, clientIP)
+		return session.Token
+	}
+
+	// Authentication flow: AUTH:<device_token>
+	token, err := ParseAuthMessage(line)
 	if err != nil {
 		log.Printf("Invalid auth format from %s: %v", clientID, err)
 		sendResponse(conn, AuthInvalidFormat.String()+"\n")
 		return ""
 	}
 
-	if !authManager.Validate(token) {
-		log.Printf("Auth failed from %s", clientID)
+	device = deviceManager.ValidateToken(token)
+	if device == nil {
+		log.Printf("Auth failed from %s (unknown or revoked device)", clientIP)
 		sendResponse(conn, AuthFailed.String()+"\n")
 		return ""
 	}
+	deviceManager.Touch(device.ID, clientIP)
 
-	// Create session for this client
 	session, err := sessionManager.CreateSession(clientID)
 	if err != nil {
 		log.Printf("Failed to create session for %s: %v", clientID, err)
@@ -412,11 +477,9 @@ func authenticateClient(conn net.Conn, reader *bufio.Reader) string {
 		return ""
 	}
 
-	log.Printf("Auth successful from %s (session created)", clientID)
-	// Send AUTH:OK with session token for v1.1+ clients
+	log.Printf("Auth successful: device %q (%s) from %s", device.Name, device.ID, clientIP)
 	sendResponse(conn, fmt.Sprintf("AUTH:OK:%s\n", session.Token))
 
-	// Clear read deadline
 	conn.SetReadDeadline(time.Time{})
 	return session.Token
 }
@@ -637,7 +700,55 @@ func handleClient(conn net.Conn) {
 	}
 }
 
+// runDeviceAdmin handles the -list-devices / -revoke admin commands and exits.
+func runDeviceAdmin(listDevices bool, revokeID string) {
+	if err := deviceManager.Load(); err != nil {
+		log.Fatalf("Failed to load device registry: %v", err)
+	}
+
+	if revokeID != "" {
+		if deviceManager.Revoke(revokeID) {
+			fmt.Printf("Device %s revoked.\n", revokeID)
+		} else {
+			fmt.Printf("No device found with ID %s.\n", revokeID)
+		}
+	}
+
+	if listDevices {
+		devices := deviceManager.List()
+		if len(devices) == 0 {
+			fmt.Println("No paired devices.")
+			return
+		}
+		fmt.Printf("%-32s  %-20s  %-8s  %-19s  %s\n", "ID", "NAME", "STATUS", "LAST SEEN", "LAST IP")
+		for _, d := range devices {
+			status := "active"
+			if d.Revoked {
+				status = "revoked"
+			}
+			fmt.Printf("%-32s  %-20s  %-8s  %-19s  %s\n",
+				d.ID, d.Name, status, d.LastSeen.Format("2006-01-02 15:04:05"), d.LastIP)
+		}
+	}
+}
+
 func main() {
+	// CLI flags. Device-admin commands run without needing /dev/uinput.
+	addr := flag.String("addr", HOST, "Bind address (e.g. 0.0.0.0 for all interfaces, 127.0.0.1 for loopback only)")
+	port := flag.Int("port", PORT, "TCP port to listen on")
+	listDevices := flag.Bool("list-devices", false, "List paired devices and exit")
+	revokeID := flag.String("revoke", "", "Revoke a paired device by ID and exit")
+	flag.Parse()
+
+	if *listDevices || *revokeID != "" {
+		runDeviceAdmin(*listDevices, *revokeID)
+		return
+	}
+
+	// Virtual input devices are only needed when actually serving.
+	if err := initInputDevices(); err != nil {
+		log.Fatalf("%v", err)
+	}
 	defer keyboard.Close()
 	defer mouse.Close()
 
@@ -659,29 +770,44 @@ func main() {
 		log.Fatalf("Failed to load TLS config: %v", err)
 	}
 
-	// Initialize authentication
+	// Initialize authentication (enrollment token) and device registry
 	if err := authManager.Initialize(); err != nil {
 		log.Fatalf("Failed to initialize authentication: %v", err)
 	}
+	if err := deviceManager.Load(); err != nil {
+		log.Fatalf("Failed to load device registry: %v", err)
+	}
 
 	// Create TLS listener
-	listener, err := tls.Listen("tcp", fmt.Sprintf("%s:%d", HOST, PORT), tlsCfg)
+	listener, err := tls.Listen("tcp", fmt.Sprintf("%s:%d", *addr, *port), tlsCfg)
 	if err != nil {
 		log.Fatalf("Failed to start TLS server: %v", err)
 	}
 	defer listener.Close()
 
+	// Graceful shutdown: close the listener on SIGINT/SIGTERM so Accept() returns,
+	// then deferred cleanup (uinput devices, cleanup goroutines) runs on the way out.
+	shuttingDown := make(chan struct{})
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigCh
+		log.Printf("Received %s — shutting down gracefully...", sig)
+		close(shuttingDown)
+		listener.Close()
+	}()
+
 	log.Println("════════════════════════════════════════════════════════════════════")
 	log.Printf("  AndroControl Server v%s", ProtocolVersion)
-	log.Printf("  Listening on %s:%d (TLS)", HOST, PORT)
+	log.Printf("  Listening on %s:%d (TLS)", *addr, *port)
 	log.Println("════════════════════════════════════════════════════════════════════")
 
-	// Print QR code for easy mobile connection (includes token)
+	// Print QR code for easy mobile connection (includes enrollment token)
 	hostname, _ := os.Hostname()
 	if hostname == "" {
 		hostname = "AndroControl"
 	}
-	PrintQRCode(hostname, PORT, authManager.GetToken())
+	PrintQRCode(hostname, *port, authManager.GetToken())
 
 	// Print certificate info (after auth token for verification)
 	tlsConfig.PrintCertificateInfo()
@@ -691,8 +817,14 @@ func main() {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Printf("Error accepting connection: %v", err)
-			continue
+			select {
+			case <-shuttingDown:
+				log.Println("Listener closed, server stopped")
+				return
+			default:
+				log.Printf("Error accepting connection: %v", err)
+				continue
+			}
 		}
 
 		// Check connection limits

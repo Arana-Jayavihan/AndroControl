@@ -66,4 +66,8 @@
     <!-- Scrim / overlays -->
     <color name="scrim">#B3000000</color>
     <color name="scrim_light">#80000000</color>
+
+    <!-- Scroll zone (touchpad edge) -->
+    <color name="scroll_zone_fill">#2222D3EE</color>
+    <color name="scroll_zone_rail">#5522D3EE</color>
 </resources>

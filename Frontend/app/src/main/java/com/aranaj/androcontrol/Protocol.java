@@ -204,6 +204,80 @@ public class Protocol {
     }
 
     /**
+     * Result of a successful device pairing.
+     */
+    public static class PairResult {
+        public final String deviceId;
+        public final char[] deviceToken;
+
+        PairResult(String deviceId, char[] deviceToken) {
+            this.deviceId = deviceId;
+            this.deviceToken = deviceToken;
+        }
+    }
+
+    /**
+     * Pairs this device with the server using the enrollment token.
+     * Sends {@code PAIR:<enrollment_token>:<device_name>} and expects
+     * {@code PAIR:OK:<device_id>:<device_token>:<session_token>}.
+     * The enrollment token array is cleared after use.
+     *
+     * @return the per-device token and id on success, or null on failure.
+     */
+    public PairResult pair(char[] enrollToken, String deviceName) {
+        if (writer == null || enrollToken == null) return null;
+
+        try {
+            String safeName = sanitizeDeviceName(deviceName);
+            char[] prefix = "PAIR:".toCharArray();
+            char[] suffix = (":" + safeName).toCharArray();
+            char[] message = new char[prefix.length + enrollToken.length + suffix.length];
+            System.arraycopy(prefix, 0, message, 0, prefix.length);
+            System.arraycopy(enrollToken, 0, message, prefix.length, enrollToken.length);
+            System.arraycopy(suffix, 0, message, prefix.length + enrollToken.length, suffix.length);
+
+            try {
+                writer.println(new String(message));
+                writer.flush();
+            } finally {
+                SecureStorage.clearCharArray(message);
+            }
+
+            String response = reader.readLine();
+            if (response == null) {
+                return null;
+            }
+            response = response.trim();
+            Log.d(TAG, "Pair response: " + (response.startsWith("PAIR:OK") ? "PAIR:OK" : response));
+
+            if (response.startsWith("PAIR:OK:")) {
+                // PAIR:OK:<device_id>:<device_token>:<session_token>
+                String[] parts = response.split(":");
+                if (parts.length >= 5) {
+                    String deviceId = parts[2];
+                    String deviceToken = parts[3];
+                    sessionToken = parts[4];
+                    return new PairResult(deviceId, deviceToken.toCharArray());
+                }
+            }
+            return null;
+        } catch (IOException e) {
+            Log.e(TAG, "Pairing failed", e);
+            return null;
+        } finally {
+            SecureStorage.clearCharArray(enrollToken);
+        }
+    }
+
+    private static String sanitizeDeviceName(String name) {
+        if (name == null) return "Android device";
+        String cleaned = name.replace('\n', ' ').replace('\r', ' ').trim();
+        if (cleaned.isEmpty()) cleaned = "Android device";
+        if (cleaned.length() > 64) cleaned = cleaned.substring(0, 64);
+        return cleaned;
+    }
+
+    /**
      * Sends a version negotiation message.
      */
     public boolean negotiateVersion() {

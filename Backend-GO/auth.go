@@ -200,14 +200,15 @@ func (am *AuthManager) RegenerateToken() error {
 	return am.regenerateTokenLocked()
 }
 
-// PrintToken displays the token for the user
+// PrintToken displays the enrollment/pairing token for the operator.
 func (am *AuthManager) PrintToken() {
 	log.Println("╔══════════════════════════════════════════════════════════════════╗")
-	log.Println("║                     AUTHENTICATION TOKEN                         ║")
+	log.Println("║                    ENROLLMENT / PAIRING TOKEN                    ║")
 	log.Println("╠══════════════════════════════════════════════════════════════════╣")
 	log.Printf("║  Token: %-58s ║", am.token)
 	log.Println("╠══════════════════════════════════════════════════════════════════╣")
-	log.Println("║  Enter this token in the Android app when adding the server      ║")
+	log.Println("║  Use this token to PAIR a new device. Each device then receives  ║")
+	log.Println("║  its own token; revoke one with: AndroControl -revoke <id>       ║")
 	log.Println("╚══════════════════════════════════════════════════════════════════╝")
 }
 

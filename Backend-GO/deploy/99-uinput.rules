@@ -1,0 +1,4 @@
+# Make /dev/uinput accessible to the 'input' group so AndroControl can run
+# without root. Install to /etc/udev/rules.d/99-uinput.rules then reload:
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"

@@ -69,6 +69,10 @@
     <color name="scrim">#99000000</color>
     <color name="scrim_light">#66000000</color>
 
+    <!-- Scroll zone (touchpad edge) -->
+    <color name="scroll_zone_fill">#1406B6D4</color>
+    <color name="scroll_zone_rail">#4006B6D4</color>
+
     <!-- Legacy -->
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>

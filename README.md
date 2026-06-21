@@ -53,21 +53,50 @@ The solution follows a client-server architecture:
 
 3. **First run**: The server will:
    - Generate TLS certificates (stored in `certs/`)
-   - Generate an authentication token (stored in `auth_token`)
+   - Generate an **enrollment (pairing) token** (stored in `auth_token`)
    - Display a QR code for easy mobile setup
    - Start listening on port 5050
+
+#### Command-line options
+
+```
+./AndroControl [flags]
+
+  -addr string      Bind address (default "0.0.0.0"; use 127.0.0.1 for loopback only)
+  -port int         TCP port to listen on (default 5050)
+  -list-devices     List paired devices and exit
+  -revoke <id>      Revoke a paired device by ID and exit
+```
+
+The server stops cleanly on `Ctrl+C` / `SIGTERM`, releasing the virtual input devices.
 
 ### Setting up the Android App
 
 1. Build the APK from source or download a release
 2. Install on your Android device
-3. **Connect via QR code** (recommended):
+3. **Pair via QR code** (recommended):
    - Open the app and tap the QR scanner icon
    - Scan the QR code displayed by the server
    - Verify the certificate fingerprint and accept
-4. **Or connect manually**:
-   - Add a new server with IP, port, and token
+4. **Or pair manually**:
+   - Add a new server with IP, port, and the pairing token
    - Verify the certificate fingerprint on first connection
+
+On first connection the app exchanges the pairing token for its **own per-device token**
+(the pairing token is then discarded on the phone). Each device can be revoked
+independently from the server.
+
+### Managing paired devices
+
+```bash
+# List devices (id, name, status, last seen, last IP)
+./AndroControl -list-devices
+
+# Revoke a specific device — it can no longer connect until re-paired
+./AndroControl -revoke <device-id>
+```
+
+Device records are stored in `devices.json` (token hashes only — never plaintext).
 
 ## Usage
 
@@ -93,8 +122,17 @@ All communication between the app and server is encrypted using TLS 1.2 or 1.3. 
 ### Certificate Pinning (TOFU)
 On first connection, the app displays the server's certificate fingerprint for verification. Once accepted, the fingerprint is saved and verified on subsequent connections. If the certificate changes, you'll receive a warning.
 
-### Token Authentication
-The server generates a secure random token on first run. This token must be provided by the client to authenticate. Tokens are stored securely using Android Keystore encryption.
+### Per-device Authentication
+The server generates a long-lived **enrollment (pairing) token** on first run. A device
+presents this token once to *pair*; the server then issues that device its **own
+per-device token**, which the app stores (Android Keystore, AES-GCM). Per-device tokens:
+
+- can be **revoked individually** (`-revoke <id>`) without affecting other devices,
+- are stored on the server as **SHA-256 hashes only** (never plaintext),
+- record last-seen time and IP for basic auditing (`-list-devices`).
+
+Anyone with the enrollment token can pair a new device, so treat the QR code / token
+as a secret and rotate it (delete `auth_token` and restart) if it leaks.
 
 ### Session Management
 Each authenticated connection receives a session token with a 30-minute TTL. Sessions are automatically refreshed during active use.
@@ -105,6 +143,34 @@ Each authenticated connection receives a session token with a 30-minute TTL. Ses
 - Protocol: **TCP with TLS**
 - Both devices must be on the same network (or have appropriate routing)
 - Firewall must allow TCP traffic on the configured port
+
+> **Security note:** anyone who can reach the port and holds a valid token gets full
+> keyboard/mouse control of the machine. Run AndroControl only on trusted networks,
+> bind to `127.0.0.1` and use a VPN/SSH tunnel for remote access, or restrict the port
+> with a firewall. Avoid exposing it directly to the internet.
+
+## Running as a service (systemd)
+
+Sample units are in [`Backend-GO/deploy/`](Backend-GO/deploy/):
+
+```bash
+# 1. Load uinput at boot and grant the 'input' group access to it
+sudo cp Backend-GO/deploy/uinput.conf      /etc/modules-load.d/uinput.conf
+sudo cp Backend-GO/deploy/99-uinput.rules  /etc/udev/rules.d/99-uinput.rules
+sudo modprobe uinput
+sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# 2. Create a dedicated user and install the binary + data dir
+sudo useradd --system --no-create-home --groups input androcontrol
+sudo install -Dm755 Backend-GO/AndroControl /usr/local/bin/AndroControl
+sudo install -d -o androcontrol -g androcontrol /var/lib/androcontrol
+
+# 3. Install and start the service
+sudo cp Backend-GO/deploy/androcontrol.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now androcontrol
+sudo journalctl -u androcontrol -f   # view the QR code / token / fingerprint
+```
 
 ## Building from Source
 

@@ -1,0 +1,35 @@
+[Unit]
+Description=AndroControl remote input server
+After=network.target
+
+[Service]
+Type=simple
+# Run as a dedicated unprivileged user that belongs to the 'input' group.
+# Create it with:  sudo useradd --system --no-create-home --groups input androcontrol
+User=androcontrol
+Group=androcontrol
+SupplementaryGroups=input
+
+# Working dir holds certs/, auth_token, devices.json
+WorkingDirectory=/var/lib/androcontrol
+ExecStart=/usr/local/bin/AndroControl -addr 0.0.0.0 -port 5050
+
+Restart=on-failure
+RestartSec=5
+
+# --- Hardening ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_INET AF_INET6
+ReadWritePaths=/var/lib/androcontrol
+
+# Only allow the uinput device (needed to inject keyboard/mouse events)
+DevicePolicy=closed
+DeviceAllow=/dev/uinput rw
+
+[Install]
+WantedBy=multi-user.target

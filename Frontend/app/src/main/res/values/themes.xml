@@ -50,6 +50,7 @@
 
         <!-- Dialogs pick up brand rounding -->
         <item name="alertDialogTheme">@style/ThemeOverlay.AndroControl.Dialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.AndroControl.Dialog</item>
     </style>
 
     <style name="Theme.AndroControl" parent="Base.Theme.AndroControl" />
