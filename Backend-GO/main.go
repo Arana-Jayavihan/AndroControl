@@ -754,11 +754,20 @@ func main() {
 	// CLI flags. Device-admin commands run without needing /dev/uinput.
 	addr := flag.String("addr", HOST, "Bind address (e.g. 0.0.0.0 for all interfaces, 127.0.0.1 for loopback only)")
 	port := flag.Int("port", PORT, "TCP port to listen on")
+	dataDir := flag.String("data-dir", "", "Directory holding certs/, auth_token and devices.json (default: current directory)")
 	listDevices := flag.Bool("list-devices", false, "List paired devices and exit")
 	revoke := flag.String("revoke", "", "Revoke a paired device by ID or name, then exit")
 	revokeAll := flag.Bool("revoke-all", false, "Revoke all paired devices, then exit")
 	cleanup := flag.Bool("cleanup", false, "Remove revoked devices from the registry, then exit")
 	flag.Parse()
+
+	// All data files are resolved relative to the working directory, so honour
+	// -data-dir by switching into it (lets admin commands run from anywhere).
+	if *dataDir != "" {
+		if err := os.Chdir(*dataDir); err != nil {
+			log.Fatalf("Failed to enter data dir %s: %v", *dataDir, err)
+		}
+	}
 
 	if *listDevices || *revoke != "" || *revokeAll || *cleanup {
 		runDeviceAdmin(*listDevices, *revoke, *revokeAll, *cleanup)

@@ -64,6 +64,7 @@ The solution follows a client-server architecture:
 
   -addr string      Bind address (default "0.0.0.0"; use 127.0.0.1 for loopback only)
   -port int         TCP port to listen on (default 5050)
+  -data-dir string  Directory with certs/, auth_token, devices.json (default: current dir)
   -list-devices     List paired devices and exit
   -revoke <id|name> Revoke a paired device by ID or name, then exit
   -revoke-all       Revoke all paired devices, then exit
@@ -90,27 +91,38 @@ independently from the server.
 
 ### Managing paired devices
 
+**When running as a service, use the `androcontrol-ctl` helper** — it runs the
+command as the service user against the right data directory and reloads the
+service for you:
+
 ```bash
-# List devices (id, name, status, last seen, last IP)
-./AndroControl -list-devices
+sudo androcontrol-ctl list                 # list devices (id, name, status, last seen, IP)
+sudo androcontrol-ctl revoke <id-or-name>  # revoke one device (by ID or name)
+sudo androcontrol-ctl revoke-all           # revoke every device
+sudo androcontrol-ctl cleanup              # drop revoked devices from the registry
+```
 
-# Revoke a device by ID or name — it can no longer connect until re-paired
-./AndroControl -revoke <device-id-or-name>
+The NixOS module installs `androcontrol-ctl` automatically. For the plain systemd
+deploy, install it once:
+`sudo install -m755 Backend-GO/deploy/androcontrol-ctl /usr/local/bin/`.
 
-# Revoke every paired device
-./AndroControl -revoke-all
+Under the hood these map to the binary's own flags, which you can also call
+directly (e.g. when running the server by hand):
 
-# Permanently remove revoked devices from the registry
-./AndroControl -cleanup
+```bash
+./AndroControl -data-dir /var/lib/androcontrol -list-devices
+./AndroControl -data-dir /var/lib/androcontrol -revoke <id-or-name>
+./AndroControl -data-dir /var/lib/androcontrol -revoke-all
+./AndroControl -data-dir /var/lib/androcontrol -cleanup
 ```
 
 Device records are stored in `devices.json` (token hashes only — never plaintext).
 Revoked devices are also **pruned automatically once a day** while the server runs.
 
-> When running as a **service**, the admin commands above edit `devices.json` on
-> disk while a separate server process holds the registry in memory. Apply the
-> change to the running server without a restart by reloading it (sends `SIGHUP`):
-> `sudo systemctl reload androcontrol` (or `kill -HUP <pid>`).
+> Why a helper? Admin commands edit `devices.json` on disk while the running
+> server holds the registry in memory. `androcontrol-ctl` reloads the service
+> (sends `SIGHUP`) so the change applies without a restart. Doing it by hand is
+> equivalent to: run the flag as the service user, then `sudo systemctl reload androcontrol`.
 
 ## Usage
 
@@ -174,9 +186,10 @@ sudo cp Backend-GO/deploy/99-uinput.rules  /etc/udev/rules.d/99-uinput.rules
 sudo modprobe uinput
 sudo udevadm control --reload-rules && sudo udevadm trigger
 
-# 2. Create a dedicated user and install the binary + data dir
+# 2. Create a dedicated user and install the binary + helper + data dir
 sudo useradd --system --no-create-home --groups input androcontrol
 sudo install -Dm755 Backend-GO/AndroControl /usr/local/bin/AndroControl
+sudo install -m755 Backend-GO/deploy/androcontrol-ctl /usr/local/bin/androcontrol-ctl
 sudo install -d -o androcontrol -g androcontrol /var/lib/androcontrol
 
 # 3. Install and start the service

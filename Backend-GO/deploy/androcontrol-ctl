@@ -1,0 +1,46 @@
+#!/bin/sh
+# androcontrol-ctl — manage paired devices on a running AndroControl service.
+#
+# Install:  sudo install -m755 androcontrol-ctl /usr/local/bin/androcontrol-ctl
+# Usage:    sudo androcontrol-ctl {list | revoke <id|name> | revoke-all | cleanup}
+#
+# Override defaults via env if your install differs:
+#   ANDROCONTROL_BIN, ANDROCONTROL_DATADIR, ANDROCONTROL_USER
+set -eu
+
+BIN="${ANDROCONTROL_BIN:-/usr/local/bin/AndroControl}"
+DATADIR="${ANDROCONTROL_DATADIR:-/var/lib/androcontrol}"
+SVCUSER="${ANDROCONTROL_USER:-androcontrol}"
+
+# Re-run with privileges if not already root.
+if [ "$(id -u)" -ne 0 ]; then
+  exec sudo "$0" "$@"
+fi
+
+run() { runuser -u "$SVCUSER" -- "$BIN" -data-dir "$DATADIR" "$@"; }
+reload() { systemctl reload androcontrol 2>/dev/null || systemctl restart androcontrol; }
+
+cmd="${1:-}"
+case "$cmd" in
+  list|list-devices)
+    run -list-devices
+    ;;
+  revoke)
+    shift
+    [ "$#" -ge 1 ] || { echo "usage: androcontrol-ctl revoke <id|name>" >&2; exit 1; }
+    run -revoke "$1"
+    reload
+    ;;
+  revoke-all)
+    run -revoke-all
+    reload
+    ;;
+  cleanup)
+    run -cleanup
+    reload
+    ;;
+  *)
+    echo "usage: androcontrol-ctl {list | revoke <id|name> | revoke-all | cleanup}" >&2
+    exit 1
+    ;;
+esac

@@ -56,6 +56,52 @@
         androcontrol = { config, lib, pkgs, ... }:
           let
             cfg = config.services.androcontrol;
+
+            # Convenience CLI so admins don't have to hand-roll the
+            # `runuser ... -data-dir ... && systemctl reload` dance.
+            # Usage:  sudo androcontrol-ctl {list | revoke <id|name> | revoke-all | cleanup}
+            adminCli = pkgs.writeShellScriptBin "androcontrol-ctl" ''
+              set -eu
+
+              BIN=${cfg.package}/bin/AndroControl
+              DATADIR=${cfg.dataDir}
+              SVCUSER=${cfg.user}
+              RUNUSER=${pkgs.util-linux}/bin/runuser
+              SYSTEMCTL=${pkgs.systemd}/bin/systemctl
+
+              # Re-run with privileges if not already root.
+              if [ "$(id -u)" -ne 0 ]; then
+                exec /run/wrappers/bin/sudo "$0" "$@"
+              fi
+
+              run() { "$RUNUSER" -u "$SVCUSER" -- "$BIN" -data-dir "$DATADIR" "$@"; }
+              reload() { "$SYSTEMCTL" reload androcontrol 2>/dev/null || "$SYSTEMCTL" restart androcontrol; }
+
+              cmd="''${1:-}"
+              case "$cmd" in
+                list|list-devices)
+                  run -list-devices
+                  ;;
+                revoke)
+                  shift
+                  [ "$#" -ge 1 ] || { echo "usage: androcontrol-ctl revoke <id|name>" >&2; exit 1; }
+                  run -revoke "$1"
+                  reload
+                  ;;
+                revoke-all)
+                  run -revoke-all
+                  reload
+                  ;;
+                cleanup)
+                  run -cleanup
+                  reload
+                  ;;
+                *)
+                  echo "usage: androcontrol-ctl {list | revoke <id|name> | revoke-all | cleanup}" >&2
+                  exit 1
+                  ;;
+              esac
+            '';
           in
           {
             options.services.androcontrol = {
@@ -108,6 +154,9 @@
             };
 
             config = lib.mkIf cfg.enable {
+              # Provides `androcontrol-ctl` on PATH for device management.
+              environment.systemPackages = [ adminCli ];
+
               users.users.${cfg.user} = {
                 isSystemUser = true;
                 group = cfg.group;
