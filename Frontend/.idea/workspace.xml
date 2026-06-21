@@ -26,24 +26,7 @@
     <option name="autoReloadType" value="NONE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="ed77e808-61b0-4947-ab3f-8af4efad977a" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/../.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/../.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gradle/buildOutputCleanup/buildOutputCleanup.lock" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/buildOutputCleanup/buildOutputCleanup.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gradle/buildOutputCleanup/outputFiles.bin" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/buildOutputCleanup/outputFiles.bin" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gradle/config.properties" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/config.properties" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/AndroControlApp.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/AndroControlApp.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/MainActivity.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/MainActivity.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/ServerManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/ServerManager.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/res/layout/activity_main.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/layout/activity_main.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/res/values-night/colors.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/values-night/colors.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/res/values-night/themes.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/values-night/themes.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/res/values/colors.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/values/colors.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/res/values/strings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/values/strings.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/res/values/themes.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/values/themes.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../result" beforeDir="false" />
-    </list>
+    <list default="true" id="ed77e808-61b0-4947-ab3f-8af4efad977a" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -52,7 +35,7 @@
   <component name="ClangdSettings">
     <option name="formatViaClangd" value="false" />
   </component>
-  <component name="ExecutionTargetManager" SELECTED_TARGET="device_and_snapshot_combo_box_target[LocalEmulator::path=/home/lucifer/.android/avd/Medium_Phone.avd]" />
+  <component name="ExecutionTargetManager" SELECTED_TARGET="device_and_snapshot_combo_box_target[PhysicalDevice::serial=41161FDJH004E3]" />
   <component name="ExternalProjectsData">
     <projectState path="$PROJECT_DIR$">
       <ProjectState />
@@ -97,7 +80,7 @@
     &quot;Android App.AndroControl.app.executor&quot;: &quot;Run&quot;,
     &quot;ApkExportedModule&quot;: &quot;AndroControl.app&quot;,
     &quot;ExportApk.ApkPathForAndroControl.app&quot;: &quot;/home/lucifer/Projects/AndroControl/Frontend/app&quot;,
-    &quot;Gradle.Frontend:app.executor&quot;: &quot;Debug&quot;,
+    &quot;Gradle.Frontend:app.executor&quot;: &quot;Run&quot;,
     &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
@@ -206,6 +189,10 @@
       <GradleCoverageDisabled>false</GradleCoverageDisabled>
       <method v="2" />
     </configuration>
+    <list>
+      <item itemvalue="Android App.AndroControl.app" />
+      <item itemvalue="Gradle.Frontend:app" />
+    </list>
   </component>
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
@@ -222,12 +209,12 @@
       <map>
         <entry key="com.aranaj.androcontrol">
           <value>
-            <CheckInfo lastCheckTimestamp="1771259115245" />
+            <CheckInfo lastCheckTimestamp="1782033033759" />
           </value>
         </entry>
         <entry key="com.aranaj.androcontrol.test">
           <value>
-            <CheckInfo lastCheckTimestamp="1771259115247" />
+            <CheckInfo lastCheckTimestamp="1782033033760" />
           </value>
         </entry>
       </map>

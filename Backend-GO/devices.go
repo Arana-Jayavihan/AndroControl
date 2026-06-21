@@ -20,12 +20,16 @@ const (
 	DeviceIDLength    = 16 // 16 bytes -> 32 hex characters
 	DevicesFile       = "devices.json"
 	MaxDeviceNameLen  = 64
+
+	// DeviceCleanupInterval is how often revoked devices are pruned automatically.
+	DeviceCleanupInterval = 24 * time.Hour
 )
 
 // Device represents a paired client device.
 // The plaintext token is never stored; only its SHA-256 hash is persisted.
 type Device struct {
 	ID        string    `json:"id"`
+	ClientID  string    `json:"client_id,omitempty"` // stable per-install id from the client
 	Name      string    `json:"name"`
 	TokenHash string    `json:"token_hash"`
 	CreatedAt time.Time `json:"created_at"`
@@ -70,6 +74,35 @@ func (dm *DeviceManager) Load() error {
 		dm.devices[d.ID] = d
 	}
 	log.Printf("Loaded %d paired device(s)", len(dm.devices))
+	return nil
+}
+
+// Reload re-reads the registry from disk, replacing the in-memory state. Used to
+// pick up out-of-band changes (e.g. `AndroControl -revoke` run against a service).
+func (dm *DeviceManager) Reload() error {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+
+	data, err := os.ReadFile(dm.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			dm.devices = make(map[string]*Device)
+			return nil
+		}
+		return err
+	}
+
+	var list []*Device
+	if err := json.Unmarshal(data, &list); err != nil {
+		return fmt.Errorf("failed to parse devices file: %w", err)
+	}
+
+	fresh := make(map[string]*Device, len(list))
+	for _, d := range list {
+		fresh[d.ID] = d
+	}
+	dm.devices = fresh
+	log.Printf("Reloaded device registry (%d device(s))", len(fresh))
 	return nil
 }
 
@@ -124,12 +157,39 @@ func sanitizeDeviceName(name string) string {
 	return s
 }
 
-// Register creates a new device record and returns its ID and plaintext token.
-// The plaintext token is returned exactly once (to send to the client); only its
-// hash is persisted.
-func (dm *DeviceManager) Register(name, ip string) (id string, token string, err error) {
+// Register pairs a device and returns its ID and plaintext token. The plaintext
+// token is returned exactly once (to send to the client); only its hash is stored.
+//
+// If clientID is non-empty and matches an existing, non-revoked device, that
+// record is reused and its token is rotated in place — this prevents a duplicate
+// entry every time the same physical device re-pairs (e.g. after the server was
+// removed and re-added in the app). A revoked record is never reused, so
+// revocation cannot be silently undone by re-pairing.
+func (dm *DeviceManager) Register(clientID, name, ip string) (id string, token string, err error) {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
+
+	now := time.Now()
+
+	if clientID != "" {
+		for _, d := range dm.devices {
+			if d.ClientID == clientID && !d.Revoked {
+				token, err = randomHex(DeviceTokenLength)
+				if err != nil {
+					return "", "", err
+				}
+				d.TokenHash = hashToken(token)
+				d.Name = sanitizeDeviceName(name)
+				d.LastSeen = now
+				d.LastIP = ip
+				if err := dm.saveLocked(); err != nil {
+					return "", "", err
+				}
+				log.Printf("Re-paired existing device %q (%s) from %s", d.Name, d.ID, ip)
+				return d.ID, token, nil
+			}
+		}
+	}
 
 	id, err = randomHex(DeviceIDLength)
 	if err != nil {
@@ -140,9 +200,9 @@ func (dm *DeviceManager) Register(name, ip string) (id string, token string, err
 		return "", "", err
 	}
 
-	now := time.Now()
 	dev := &Device{
 		ID:        id,
+		ClientID:  clientID,
 		Name:      sanitizeDeviceName(name),
 		TokenHash: hashToken(token),
 		CreatedAt: now,
@@ -210,6 +270,86 @@ func (dm *DeviceManager) Revoke(id string) bool {
 		return true
 	}
 	return false
+}
+
+// RevokeByName marks all non-revoked devices with the given name as revoked.
+// Returns the number of devices revoked.
+func (dm *DeviceManager) RevokeByName(name string) int {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	count := 0
+	for _, d := range dm.devices {
+		if !d.Revoked && d.Name == name {
+			d.Revoked = true
+			count++
+		}
+	}
+	if count > 0 {
+		if err := dm.saveLocked(); err != nil {
+			log.Printf("Warning: failed to persist revoke-by-name: %v", err)
+		}
+		log.Printf("Revoked %d device(s) named %q", count, name)
+	}
+	return count
+}
+
+// RevokeAll marks every non-revoked device as revoked.
+// Returns the number of devices revoked.
+func (dm *DeviceManager) RevokeAll() int {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	count := 0
+	for _, d := range dm.devices {
+		if !d.Revoked {
+			d.Revoked = true
+			count++
+		}
+	}
+	if count > 0 {
+		if err := dm.saveLocked(); err != nil {
+			log.Printf("Warning: failed to persist revoke-all: %v", err)
+		}
+		log.Printf("Revoked all devices (%d)", count)
+	}
+	return count
+}
+
+// CleanupRevoked permanently removes revoked devices from the registry.
+// Returns the number of records removed.
+func (dm *DeviceManager) CleanupRevoked() int {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	removed := 0
+	for id, d := range dm.devices {
+		if d.Revoked {
+			delete(dm.devices, id)
+			removed++
+		}
+	}
+	if removed > 0 {
+		if err := dm.saveLocked(); err != nil {
+			log.Printf("Warning: failed to persist device cleanup: %v", err)
+		}
+	}
+	return removed
+}
+
+// StartCleanup periodically prunes revoked devices from the registry.
+func (dm *DeviceManager) StartCleanup(interval time.Duration, stopCh <-chan struct{}) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if removed := dm.CleanupRevoked(); removed > 0 {
+					log.Printf("Device cleanup: removed %d revoked device(s)", removed)
+				}
+			case <-stopCh:
+				return
+			}
+		}
+	}()
 }
 
 // List returns a snapshot copy of all devices.

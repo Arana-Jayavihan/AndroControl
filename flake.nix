@@ -136,6 +136,9 @@
                   Group = cfg.group;
                   WorkingDirectory = cfg.dataDir;
                   ExecStart = "${cfg.package}/bin/AndroControl -addr ${cfg.bindAddress} -port ${toString cfg.port}";
+                  # `systemctl reload androcontrol` re-reads devices.json so external
+                  # revoke/cleanup changes apply without a full restart.
+                  ExecReload = "${pkgs.coreutils}/bin/kill -HUP $MAINPID";
                   Restart = "on-failure";
                   RestartSec = 5;
 

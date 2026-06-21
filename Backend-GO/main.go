@@ -414,16 +414,21 @@ func authenticateClient(conn net.Conn, reader *bufio.Reader) string {
 	var device *Device
 
 	if strings.HasPrefix(line, "PAIR:") {
-		// Pairing flow: PAIR:<enrollment_token>:<device_name>
-		parts := strings.SplitN(line, ":", 3)
+		// Pairing flow: PAIR:<enrollment_token>:<client_device_id>:<device_name>
+		// (legacy clients send PAIR:<enrollment_token>:<device_name> with no id)
+		parts := strings.SplitN(line, ":", 4)
 		if len(parts) < 2 {
 			log.Printf("Invalid pair format from %s", clientID)
 			sendResponse(conn, "PAIR:INVALID\n")
 			return ""
 		}
 		enrollToken := strings.TrimSpace(parts[1])
+		clientDeviceID := ""
 		deviceName := ""
-		if len(parts) == 3 {
+		if len(parts) >= 4 {
+			clientDeviceID = strings.TrimSpace(parts[2])
+			deviceName = parts[3]
+		} else if len(parts) == 3 {
 			deviceName = parts[2]
 		}
 
@@ -433,7 +438,7 @@ func authenticateClient(conn net.Conn, reader *bufio.Reader) string {
 			return ""
 		}
 
-		id, token, err := deviceManager.Register(deviceName, clientIP)
+		id, token, err := deviceManager.Register(clientDeviceID, deviceName, clientIP)
 		if err != nil {
 			log.Printf("Failed to register device for %s: %v", clientID, err)
 			sendResponse(conn, "PAIR:ERROR\n")
@@ -700,18 +705,31 @@ func handleClient(conn net.Conn) {
 	}
 }
 
-// runDeviceAdmin handles the -list-devices / -revoke admin commands and exits.
-func runDeviceAdmin(listDevices bool, revokeID string) {
+// runDeviceAdmin handles the device-management admin commands and exits.
+func runDeviceAdmin(listDevices bool, revoke string, revokeAll bool, cleanup bool) {
 	if err := deviceManager.Load(); err != nil {
 		log.Fatalf("Failed to load device registry: %v", err)
 	}
 
-	if revokeID != "" {
-		if deviceManager.Revoke(revokeID) {
-			fmt.Printf("Device %s revoked.\n", revokeID)
+	if revokeAll {
+		n := deviceManager.RevokeAll()
+		fmt.Printf("Revoked %d device(s).\n", n)
+	}
+
+	if revoke != "" {
+		// Match by exact device ID first, then fall back to device name.
+		if deviceManager.Revoke(revoke) {
+			fmt.Printf("Device %s revoked.\n", revoke)
+		} else if n := deviceManager.RevokeByName(revoke); n > 0 {
+			fmt.Printf("Revoked %d device(s) named %q.\n", n, revoke)
 		} else {
-			fmt.Printf("No device found with ID %s.\n", revokeID)
+			fmt.Printf("No device found with ID or name %q.\n", revoke)
 		}
+	}
+
+	if cleanup {
+		n := deviceManager.CleanupRevoked()
+		fmt.Printf("Removed %d revoked device(s) from the registry.\n", n)
 	}
 
 	if listDevices {
@@ -737,11 +755,13 @@ func main() {
 	addr := flag.String("addr", HOST, "Bind address (e.g. 0.0.0.0 for all interfaces, 127.0.0.1 for loopback only)")
 	port := flag.Int("port", PORT, "TCP port to listen on")
 	listDevices := flag.Bool("list-devices", false, "List paired devices and exit")
-	revokeID := flag.String("revoke", "", "Revoke a paired device by ID and exit")
+	revoke := flag.String("revoke", "", "Revoke a paired device by ID or name, then exit")
+	revokeAll := flag.Bool("revoke-all", false, "Revoke all paired devices, then exit")
+	cleanup := flag.Bool("cleanup", false, "Remove revoked devices from the registry, then exit")
 	flag.Parse()
 
-	if *listDevices || *revokeID != "" {
-		runDeviceAdmin(*listDevices, *revokeID)
+	if *listDevices || *revoke != "" || *revokeAll || *cleanup {
+		runDeviceAdmin(*listDevices, *revoke, *revokeAll, *cleanup)
 		return
 	}
 
@@ -777,6 +797,8 @@ func main() {
 	if err := deviceManager.Load(); err != nil {
 		log.Fatalf("Failed to load device registry: %v", err)
 	}
+	// Prune revoked devices once a day.
+	deviceManager.StartCleanup(DeviceCleanupInterval, cleanupStopCh)
 
 	// Create TLS listener
 	listener, err := tls.Listen("tcp", fmt.Sprintf("%s:%d", *addr, *port), tlsCfg)
@@ -789,12 +811,23 @@ func main() {
 	// then deferred cleanup (uinput devices, cleanup goroutines) runs on the way out.
 	shuttingDown := make(chan struct{})
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
-		sig := <-sigCh
-		log.Printf("Received %s — shutting down gracefully...", sig)
-		close(shuttingDown)
-		listener.Close()
+		for sig := range sigCh {
+			if sig == syscall.SIGHUP {
+				// Reload the device registry so out-of-band admin changes
+				// (e.g. `AndroControl -revoke ...`) take effect without a restart.
+				log.Println("Received SIGHUP — reloading device registry")
+				if err := deviceManager.Reload(); err != nil {
+					log.Printf("Device registry reload failed: %v", err)
+				}
+				continue
+			}
+			log.Printf("Received %s — shutting down gracefully...", sig)
+			close(shuttingDown)
+			listener.Close()
+			return
+		}
 	}()
 
 	log.Println("════════════════════════════════════════════════════════════════════")

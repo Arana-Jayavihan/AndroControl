@@ -1276,7 +1276,8 @@ public class MainActivity extends AppCompatActivity implements
                     }
 
                     // pair() clears the enrollment token array after use.
-                    Protocol.PairResult pairResult = protocol.pair(enrollToken, getDeviceName());
+                    Protocol.PairResult pairResult = protocol.pair(
+                            enrollToken, settingsManager.getClientDeviceId(), getDeviceName());
                     if (pairResult == null) {
                         synchronized (connectionLock) {
                             if (currentServer == server) {

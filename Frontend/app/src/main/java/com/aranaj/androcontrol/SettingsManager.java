@@ -38,6 +38,10 @@ public class SettingsManager {
     // Scroll direction
     private static final String KEY_SCROLL_INVERTED = "scroll_inverted";
 
+    // Stable per-install device identifier (used so re-pairing doesn't create
+    // duplicate server-side device records). App-global; never tied to a server.
+    private static final String KEY_CLIENT_DEVICE_ID = "client_device_id";
+
     // Haptic feedback intensity (0 = off .. 100 = strongest)
     private static final String KEY_HAPTIC_INTENSITY = "haptic_intensity";
     public static final int HAPTIC_INTENSITY_MIN = 0;
@@ -77,6 +81,22 @@ public class SettingsManager {
     /** Reads the saved theme and applies it process-wide. */
     public void applyTheme() {
         AppCompatDelegate.setDefaultNightMode(getNightModeFlag());
+    }
+
+    // ---------------- Client device identity ----------------
+
+    /**
+     * Returns this installation's stable device id, generating and persisting one
+     * on first use. It survives deleting/re-adding servers, so the server can
+     * recognise a re-pairing device and avoid creating duplicate records.
+     */
+    public String getClientDeviceId() {
+        String id = prefs.getString(KEY_CLIENT_DEVICE_ID, null);
+        if (id == null) {
+            id = java.util.UUID.randomUUID().toString();
+            prefs.edit().putString(KEY_CLIENT_DEVICE_ID, id).apply();
+        }
+        return id;
     }
 
     // ---------------- Scroll bar position ----------------

@@ -218,19 +218,23 @@ public class Protocol {
 
     /**
      * Pairs this device with the server using the enrollment token.
-     * Sends {@code PAIR:<enrollment_token>:<device_name>} and expects
-     * {@code PAIR:OK:<device_id>:<device_token>:<session_token>}.
+     * Sends {@code PAIR:<enrollment_token>:<client_device_id>:<device_name>} and
+     * expects {@code PAIR:OK:<device_id>:<device_token>:<session_token>}.
      * The enrollment token array is cleared after use.
+     *
+     * The client device id lets the server recognise a re-pairing device and
+     * reuse its record instead of creating a duplicate.
      *
      * @return the per-device token and id on success, or null on failure.
      */
-    public PairResult pair(char[] enrollToken, String deviceName) {
+    public PairResult pair(char[] enrollToken, String clientDeviceId, String deviceName) {
         if (writer == null || enrollToken == null) return null;
 
         try {
             String safeName = sanitizeDeviceName(deviceName);
+            String safeId = clientDeviceId != null ? clientDeviceId : "";
             char[] prefix = "PAIR:".toCharArray();
-            char[] suffix = (":" + safeName).toCharArray();
+            char[] suffix = (":" + safeId + ":" + safeName).toCharArray();
             char[] message = new char[prefix.length + enrollToken.length + suffix.length];
             System.arraycopy(prefix, 0, message, 0, prefix.length);
             System.arraycopy(enrollToken, 0, message, prefix.length, enrollToken.length);

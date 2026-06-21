@@ -65,7 +65,9 @@ The solution follows a client-server architecture:
   -addr string      Bind address (default "0.0.0.0"; use 127.0.0.1 for loopback only)
   -port int         TCP port to listen on (default 5050)
   -list-devices     List paired devices and exit
-  -revoke <id>      Revoke a paired device by ID and exit
+  -revoke <id|name> Revoke a paired device by ID or name, then exit
+  -revoke-all       Revoke all paired devices, then exit
+  -cleanup          Remove revoked devices from the registry, then exit
 ```
 
 The server stops cleanly on `Ctrl+C` / `SIGTERM`, releasing the virtual input devices.
@@ -92,11 +94,23 @@ independently from the server.
 # List devices (id, name, status, last seen, last IP)
 ./AndroControl -list-devices
 
-# Revoke a specific device — it can no longer connect until re-paired
-./AndroControl -revoke <device-id>
+# Revoke a device by ID or name — it can no longer connect until re-paired
+./AndroControl -revoke <device-id-or-name>
+
+# Revoke every paired device
+./AndroControl -revoke-all
+
+# Permanently remove revoked devices from the registry
+./AndroControl -cleanup
 ```
 
 Device records are stored in `devices.json` (token hashes only — never plaintext).
+Revoked devices are also **pruned automatically once a day** while the server runs.
+
+> When running as a **service**, the admin commands above edit `devices.json` on
+> disk while a separate server process holds the registry in memory. Apply the
+> change to the running server without a restart by reloading it (sends `SIGHUP`):
+> `sudo systemctl reload androcontrol` (or `kill -HUP <pid>`).
 
 ## Usage
 
