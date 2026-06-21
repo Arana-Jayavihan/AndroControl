@@ -41,6 +41,7 @@ var (
 	tlsConfig      *TLSConfig
 	deviceManager  *DeviceManager
 	authThrottler  *AuthThrottler
+	activeConns    *ActiveConns
 )
 
 func init() {
@@ -53,6 +54,7 @@ func init() {
 	tlsConfig = NewTLSConfig()
 	deviceManager = NewDeviceManager()
 	authThrottler = NewAuthThrottler()
+	activeConns = NewActiveConns()
 }
 
 // initInputDevices creates the virtual keyboard and mouse via uinput.
@@ -651,6 +653,10 @@ func handleClient(conn net.Conn) {
 		return
 	}
 
+	// Track this connection so revoking the device can drop it immediately.
+	activeConns.Add(deviceID, conn)
+	defer activeConns.Remove(deviceID, conn)
+
 	// Main command loop
 	for {
 		// Set idle timeout
@@ -685,6 +691,8 @@ func handleClient(conn net.Conn) {
 				logAudit("unpair device_id=%s ip=%s", deviceID, extractIP(clientAddr))
 			}
 			sendResponse(conn, "UNPAIR:OK\n")
+			// Drop any other live connections for this now-revoked device.
+			activeConns.CloseForDevice(deviceID)
 			return
 		}
 
@@ -867,6 +875,10 @@ func main() {
 				log.Println("Received SIGHUP — reloading device registry")
 				if err := deviceManager.Reload(); err != nil {
 					log.Printf("Device registry reload failed: %v", err)
+				}
+				// Drop any live connections whose device was just revoked/removed.
+				if n := activeConns.CloseRevoked(deviceManager); n > 0 {
+					logAudit("revoked_disconnect count=%d", n)
 				}
 				continue
 			}

@@ -101,6 +101,9 @@ public class MainActivity extends AppCompatActivity implements
     // Receives the "Disconnect" action from the foreground-service notification.
     private BroadcastReceiver disconnectReceiver;
 
+    // Suppresses the "connection lost" toast when we deliberately closed the link (e.g. unpair).
+    private volatile boolean suppressConnectionLostToast = false;
+
     private String serverIp = "";
     private int serverPort = 5050;
     private SSLSocket socket;
@@ -612,10 +615,9 @@ public class MainActivity extends AppCompatActivity implements
             vibrate(20);
             sendCharacter(' ');
         });
-        findViewById(R.id.btnEnter).setOnClickListener(v -> {
-            vibrate(20);
-            sendKey("ENTER");
-        });
+        // Modifier-aware so combos like WIN+ENTER / WIN+SHIFT+ENTER work
+        // (sends a COMBO when Ctrl/Alt/Shift/Win are active, otherwise plain Enter).
+        findViewById(R.id.btnEnter).setOnClickListener(v -> sendKeyWithModifiers("ENTER"));
         findViewById(R.id.btnBackspace).setOnClickListener(v -> {
             vibrate(20);
             sendKey("BACKSPACE");
@@ -934,18 +936,16 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     private void sendMouseDown(String button) {
+        // sendCommandNoAck is already async and ordered (single-thread sender);
+        // don't wrap it in another executor or press/release can reorder.
         if (protocol != null) {
-            executorService.execute(() -> {
-                protocol.sendCommandNoAck("MOUSEDOWN", button);
-            });
+            protocol.sendCommandNoAck("MOUSEDOWN", button);
         }
     }
 
     private void sendMouseUp(String button) {
         if (protocol != null) {
-            executorService.execute(() -> {
-                protocol.sendCommandNoAck("MOUSEUP", button);
-            });
+            protocol.sendCommandNoAck("MOUSEUP", button);
         }
     }
 
@@ -1082,6 +1082,7 @@ public class MainActivity extends AppCompatActivity implements
 
         if (connectedToThis) {
             reconnectTarget = null;
+            suppressConnectionLostToast = true; // server will close the link after revoking
             executorService.execute(() -> {
                 try {
                     protocol.sendUnpair(); // server revokes this device, then closes
@@ -1210,6 +1211,7 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     private void connectToServer(Server server) {
+        suppressConnectionLostToast = false;
         // Capture previous connection state BEFORE entering synchronized block
         final Server previousServer;
         final SSLSocket previousSocket;
@@ -1719,14 +1721,12 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     private void sendMouseMovement(int deltaX, int deltaY) {
-        if (out != null) {
-            executorService.execute(() -> {
-                int adjustedX = (int)(deltaX * MOVEMENT_SENSITIVITY);
-                int adjustedY = (int)(deltaY * MOVEMENT_SENSITIVITY);
-                String message = String.format("M:%d,%d", adjustedX, adjustedY);
-                out.println(message);
-                out.flush();
-            });
+        if (protocol != null) {
+            int adjustedX = (int) (deltaX * MOVEMENT_SENSITIVITY);
+            int adjustedY = (int) (deltaY * MOVEMENT_SENSITIVITY);
+            // Routed through the ordered single-thread sender (also avoids touching
+            // the raw writer, which could be nulled mid-drag on disconnect).
+            protocol.sendCommandNoAck("M", adjustedX + "," + adjustedY);
         }
     }
 
@@ -1794,9 +1794,13 @@ public class MainActivity extends AppCompatActivity implements
     // Protocol.ProtocolListener implementation
     @Override
     public void onConnectionLost() {
+        final boolean suppress = suppressConnectionLostToast;
+        suppressConnectionLostToast = false;
         mainHandler.post(() -> {
             updateStatusBar(false, null);
-            Toast.makeText(this, R.string.msg_connection_lost, Toast.LENGTH_LONG).show();
+            if (!suppress) {
+                Toast.makeText(this, R.string.msg_connection_lost, Toast.LENGTH_LONG).show();
+            }
         });
         disconnectFromServer();
     }
@@ -1959,6 +1963,28 @@ public class MainActivity extends AppCompatActivity implements
 
         heartbeatManager.shutdown();
         protocol.shutdown();
+
+        if (isChangingConfigurations()) {
+            // Being recreated (e.g. theme change). Close this instance's socket off
+            // the main thread, but KEEP the persisted last-connected server so the
+            // recreated activity auto-reconnects in onCreate.
+            final SSLSocket oldSocket = socket;
+            socket = null;
+            out = null;
+            in = null;
+            new Thread(() -> {
+                try {
+                    if (oldSocket != null && !oldSocket.isClosed()) {
+                        oldSocket.close();
+                    }
+                } catch (IOException ignored) {
+                }
+            }, "ConfigChangeSocketClose").start();
+            ConnectionService.stop(this);
+            executorService.shutdownNow();
+            return;
+        }
+
         disconnectFromServer();
         ConnectionService.stop(this);
         executorService.shutdown();

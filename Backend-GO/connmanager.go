@@ -7,8 +7,10 @@ import (
 )
 
 const (
-	DefaultMaxConnections   = 3
-	DefaultMaxPerIP         = 1
+	DefaultMaxConnections = 3
+	// Allow 2 per IP so a brief overlap during reconnect (e.g. config-change
+	// recreate, or a dropped-then-reestablished link) isn't rejected.
+	DefaultMaxPerIP = 2
 )
 
 var (

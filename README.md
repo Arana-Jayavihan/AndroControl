@@ -126,8 +126,10 @@ Revoked devices are also **pruned automatically once a day** while the server ru
 
 > Why a helper? Admin commands edit `devices.json` on disk while the running
 > server holds the registry in memory. `androcontrol-ctl` reloads the service
-> (sends `SIGHUP`) so the change applies without a restart. Doing it by hand is
-> equivalent to: run the flag as the service user, then `sudo systemctl reload androcontrol`.
+> (sends `SIGHUP`) so the change applies without a restart — and on reload the
+> server **immediately drops any live connection** belonging to a revoked
+> device. Doing it by hand is equivalent to: run the flag as the service user,
+> then `sudo systemctl reload androcontrol`.
 
 ## Usage
 

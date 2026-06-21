@@ -31,7 +31,8 @@ public class Protocol {
     private final ConcurrentHashMap<Integer, PendingMessage> pendingMessages;
     private final Handler mainHandler;
 
-    private ExecutorService executor;
+    private ExecutorService executor;       // ACK'd commands (may block waiting for ACK)
+    private ExecutorService sendExecutor;   // fire-and-forget sends — single thread to preserve order
     private PrintWriter writer;
     private BufferedReader reader;
     private ProtocolListener listener;
@@ -54,6 +55,7 @@ public class Protocol {
         this.mainHandler = new Handler(Looper.getMainLooper());
         this.running = new AtomicBoolean(false);
         this.executor = Executors.newFixedThreadPool(2);
+        this.sendExecutor = Executors.newSingleThreadExecutor();
     }
 
     /**
@@ -77,9 +79,12 @@ public class Protocol {
         writer = null;
         reader = null;
 
-        // Recreate executor if shutdown
+        // Recreate executors if shutdown
         if (executor.isShutdown()) {
             executor = Executors.newFixedThreadPool(2);
+        }
+        if (sendExecutor.isShutdown()) {
+            sendExecutor = Executors.newSingleThreadExecutor();
         }
     }
 
@@ -365,9 +370,11 @@ public class Protocol {
      */
     public void sendCommandNoAck(String command, String payload) {
         PrintWriter w = writer; // Capture reference for thread safety
-        if (w == null || executor.isShutdown()) return;
+        if (w == null || sendExecutor.isShutdown()) return;
 
-        executor.execute(() -> {
+        // Single-threaded executor → commands are written in submission order
+        // (important for typed characters and mouse press/release sequences).
+        sendExecutor.execute(() -> {
             try {
                 // Double-check writer is still valid
                 if (w.checkError()) return;
@@ -562,6 +569,7 @@ public class Protocol {
     public void shutdown() {
         stop();
         executor.shutdownNow();
+        sendExecutor.shutdownNow();
     }
 
     /**

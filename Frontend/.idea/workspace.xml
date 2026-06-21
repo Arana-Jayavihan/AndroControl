@@ -27,24 +27,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="ed77e808-61b0-4947-ab3f-8af4efad977a" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/../Backend-GO/deploy/androcontrol-ctl" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/deploy/androcontrol-ctl" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../Backend-GO/devices.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/devices.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../Backend-GO/devices_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/devices_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../Backend-GO/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/main.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gradle/buildOutputCleanup/buildOutputCleanup.lock" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/buildOutputCleanup/buildOutputCleanup.lock" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/build.gradle.kts" beforeDir="false" afterPath="$PROJECT_DIR$/app/build.gradle.kts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/MainActivity.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/MainActivity.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/Protocol.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/Protocol.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/SettingsActivity.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/SettingsActivity.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/TlsHelper.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/TlsHelper.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/res/layout/activity_settings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/layout/activity_settings.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/res/values/strings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/values/strings.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/gradle/libs.versions.toml" beforeDir="false" afterPath="$PROJECT_DIR$/gradle/libs.versions.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/gradle/wrapper/gradle-wrapper.properties" beforeDir="false" afterPath="$PROJECT_DIR$/gradle/wrapper/gradle-wrapper.properties" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../README.md" beforeDir="false" afterPath="$PROJECT_DIR$/../README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../flake.nix" beforeDir="false" afterPath="$PROJECT_DIR$/../flake.nix" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -84,7 +69,7 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/.." />
   </component>
-  <component name="GradleScriptDefinitionsStorage" workingDir="$PROJECT_DIR$" gradleHome="$USER_HOME$/.gradle/wrapper/dists/gradle-8.5-bin/5t9huq95ubn472n8rpzujfbqh/gradle-8.5" javaHome="$APPLICATION_HOME_DIR$/jbr" gradleVersion="8.5" />
+  <component name="GradleScriptDefinitionsStorage" workingDir="$PROJECT_DIR$" gradleHome="$USER_HOME$/.gradle/wrapper/dists/gradle-8.9-bin/90cnw93cvbtalezasaz0blq0a/gradle-8.9" javaHome="$APPLICATION_HOME_DIR$/jbr" gradleVersion="8.9" />
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 8
 }</component>

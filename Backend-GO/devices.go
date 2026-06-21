@@ -398,6 +398,14 @@ func (dm *DeviceManager) List() []Device {
 	return out
 }
 
+// IsActive reports whether a device exists and is not revoked.
+func (dm *DeviceManager) IsActive(id string) bool {
+	dm.mu.RLock()
+	defer dm.mu.RUnlock()
+	d, ok := dm.devices[id]
+	return ok && !d.Revoked
+}
+
 // Count returns the number of registered (including revoked) devices.
 func (dm *DeviceManager) Count() int {
 	dm.mu.RLock()
