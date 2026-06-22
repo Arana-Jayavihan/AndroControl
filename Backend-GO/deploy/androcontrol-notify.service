@@ -1,0 +1,15 @@
+# systemd --user unit for AndroControl desktop notifications.
+# Install to ~/.config/systemd/user/androcontrol-notify.service, then:
+#   systemctl --user daemon-reload && systemctl --user enable --now androcontrol-notify
+[Unit]
+Description=AndroControl connect/disconnect desktop notifications
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/androcontrol-notify
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

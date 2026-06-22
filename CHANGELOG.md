@@ -22,10 +22,12 @@ tracked separately as `ProtocolVersion` in `Backend-GO/protocol.go` (currently *
   Revocation drops any live connection; `regen-token` rotates the enrollment token and
   a running service reloads it on SIGHUP without dropping paired devices.
 - **Per-IP auth throttling and lockout** with `[AUDIT]` logging of pairing/auth events.
-- **Connect/disconnect event hook** (`-on-event` / `services.androcontrol.onEvent`) — runs
-  a configurable command on each device connect/disconnect with details in
-  `ANDROCONTROL_*` env vars (wire it to `notify-send`, `ntfy`, a webhook, etc.).
-  Disconnects also log session duration as an `[AUDIT]` line.
+- **Session audit logging** — `[AUDIT] auth_ok`/`pair_ok` on connect and `[AUDIT]
+  disconnect` (with session duration) on close.
+- **Desktop connect/disconnect notifications** delivered from the user side (the server
+  is sandboxed): a NixOS module toggle `services.androcontrol.desktopNotifications`, plus
+  a portable `Backend-GO/deploy/androcontrol-notify` script + systemd `--user` unit for
+  any distro. Both watch the service journal and pop `notify-send`.
 - **Foreground service** keeps the connection alive while the app is backgrounded.
 - Graceful shutdown (SIGINT/SIGTERM) and live device-registry reload (SIGHUP).
 

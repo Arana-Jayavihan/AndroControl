@@ -162,31 +162,20 @@ server runs.
 > then `sudo systemctl reload androcontrol`.
 
 ### Connect/disconnect notifications
-Run a command whenever a device connects or disconnects by passing `-on-event` to the
-server (or setting `services.androcontrol.onEvent` in the NixOS module). Event details
-are passed in environment variables — never interpolated into the command — so a device
-name can't inject shell:
+Every session is logged with an `[AUDIT]` prefix — `auth_ok`/`pair_ok` on connect and
+`disconnect` (with session duration) on close. The server is sandboxed and can't reach a
+desktop session, so notifications are delivered from the user side by watching that
+journal:
 
-| Variable | Value |
-| --- | --- |
-| `ANDROCONTROL_EVENT` | `connect` or `disconnect` |
-| `ANDROCONTROL_DEVICE_ID` | the paired device's id |
-| `ANDROCONTROL_DEVICE_NAME` | the device's display name |
-| `ANDROCONTROL_IP` | the client IP address |
-| `ANDROCONTROL_DURATION` | session length in seconds (disconnect only) |
+- **NixOS:** set `services.androcontrol.desktopNotifications = true;` — adds a per-user
+  service that pops `notify-send` on connect/disconnect.
+- **Any systemd distro:** install [`Backend-GO/deploy/androcontrol-notify`](Backend-GO/deploy/androcontrol-notify)
+  and [`androcontrol-notify.service`](Backend-GO/deploy/androcontrol-notify.service), then
+  `systemctl --user enable --now androcontrol-notify`.
 
-```bash
-# Headless push that works anywhere (ntfy):
-./AndroControl -on-event 'curl -fsS -d "$ANDROCONTROL_EVENT: $ANDROCONTROL_DEVICE_NAME" https://ntfy.sh/your-topic'
-```
-
-The command runs asynchronously with a 10-second timeout; failures are logged and never
-affect the session. Copy-paste recipes for ntfy, webhooks, email, syslog, and desktop
-popups are in [`Backend-GO/deploy/notify-examples`](Backend-GO/deploy/notify-examples).
-
-> **Desktop popups** (`notify-send`) only work if the server can reach a graphical
-> session bus. A hardened system service (dedicated user + sandbox) generally cannot, so
-> prefer a headless channel (ntfy/webhook), or run the server inside your own session.
+Both need your user to be able to read the service journal (group
+`systemd-journal`/`wheel`/`adm`). For headless push instead (ntfy/webhook/email), point a
+journal-watcher at `curl`/`mail` rather than `notify-send`.
 
 ## Usage
 
@@ -337,7 +326,7 @@ AndroControl/
 │   ├── ratelimit.go     # Rate limiting
 │   ├── qrcode.go        # QR code generation
 │   ├── connmanager.go   # Connection management
-│   └── deploy/          # systemd unit, udev rule, androcontrol-ctl, notify-examples
+│   └── deploy/          # systemd unit, udev rule, androcontrol-ctl, androcontrol-notify
 ├── Frontend/             # Android app
 │   └── app/src/main/java/com/aranaj/androcontrol/
 │       ├── MainActivity.java      # Main UI and controls

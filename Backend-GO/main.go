@@ -2,14 +2,12 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -36,10 +34,6 @@ const (
 	// confirmation timeout. QR-paired clients skip the prompt and finish instantly.
 	HandshakeTimeout = 90 * time.Second
 
-	// EventHookTimeout caps how long the connect/disconnect notification command may
-	// run before it is killed, so a slow or hung hook can't pile up.
-	EventHookTimeout = 10 * time.Second
-
 	// Maximum length of a single protocol line. Bounds per-connection memory so a
 	// client can't exhaust RAM by streaming bytes without a newline. Comfortably
 	// above the largest legitimate message (MaxPayloadLen 2048 + framing).
@@ -61,45 +55,7 @@ var (
 	authThrottler *AuthThrottler
 	activeConns   *ActiveConns
 	sessionGate   *SessionGate
-
-	// eventHookCmd is an optional shell command run on device connect/disconnect
-	// (set from -on-event). Empty means notifications are disabled.
-	eventHookCmd string
 )
-
-// eventHookEnv builds the ANDROCONTROL_* environment passed to the event hook.
-// Event details go through the environment (never interpolated into the command),
-// so a client-chosen device name can't inject shell.
-func eventHookEnv(event, deviceID, deviceName, ip string, duration time.Duration) []string {
-	env := []string{
-		"ANDROCONTROL_EVENT=" + event,
-		"ANDROCONTROL_DEVICE_ID=" + deviceID,
-		"ANDROCONTROL_DEVICE_NAME=" + deviceName,
-		"ANDROCONTROL_IP=" + ip,
-	}
-	if duration > 0 {
-		env = append(env, fmt.Sprintf("ANDROCONTROL_DURATION=%d", int(duration.Seconds())))
-	}
-	return env
-}
-
-// runEventHook fires the configured connect/disconnect command asynchronously. It is
-// a no-op when no hook is configured; failures are logged but never affect the session.
-func runEventHook(event, deviceID, deviceName, ip string, duration time.Duration) {
-	if eventHookCmd == "" {
-		return
-	}
-	env := eventHookEnv(event, deviceID, deviceName, ip, duration)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), EventHookTimeout)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, "/bin/sh", "-c", eventHookCmd)
-		cmd.Env = append(os.Environ(), env...)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			logWarn("event hook (%s) failed: %v: %s", event, err, strings.TrimSpace(string(out)))
-		}
-	}()
-}
 
 func init() {
 	// Initialize managers. Note: the uinput virtual devices are created later in
@@ -742,15 +698,12 @@ func handleClient(conn net.Conn) {
 	tlsConn.SetDeadline(time.Time{})
 	defer sessionGate.Release(conn)
 
-	// Notify on connect/disconnect (the disconnect line also records the duration).
+	// Audit-log the session lifecycle (the disconnect line records the duration).
 	deviceName := deviceManager.Name(deviceID)
 	connectedAt := time.Now()
-	runEventHook("connect", deviceID, deviceName, clientIP, 0)
 	defer func() {
-		dur := time.Since(connectedAt)
 		logAudit("disconnect device=%q device_id=%s ip=%s duration=%s",
-			deviceName, deviceID, clientIP, dur.Round(time.Second))
-		runEventHook("disconnect", deviceID, deviceName, clientIP, dur)
+			deviceName, deviceID, clientIP, time.Since(connectedAt).Round(time.Second))
 	}()
 
 	// Track this connection so revoking the device can drop it immediately.
@@ -942,11 +895,9 @@ func main() {
 	pruneInactive := flag.Int("prune-inactive", 0, "Remove devices not seen in N days, then exit")
 	showQR := flag.Bool("show-qr", false, "Print the pairing QR code (enrollment token + cert fingerprint) and exit")
 	regenToken := flag.Bool("regen-token", false, "Regenerate the enrollment/pairing token, reprint the QR, then exit")
-	onEvent := flag.String("on-event", "", "Shell command run on device connect/disconnect; details are passed in ANDROCONTROL_EVENT/DEVICE_ID/DEVICE_NAME/IP/DURATION env vars")
 	flag.Parse()
 
 	SetLogLevel(*logLevel)
-	eventHookCmd = strings.TrimSpace(*onEvent)
 
 	// All data files are resolved relative to the working directory, so honour
 	// -data-dir by switching into it (lets admin commands run from anywhere).

@@ -1,0 +1,38 @@
+#!/bin/sh
+# androcontrol-notify — desktop notifications for AndroControl connect/disconnect.
+#
+# The AndroControl server runs sandboxed as a dedicated system user and can't reach a
+# graphical session, so notifications are delivered from the user's side: this script
+# tails the service journal and pops a libnotify desktop notification on each
+# connect/disconnect. Run it as a systemd --user service inside your graphical session.
+#
+# Requirements: systemd-journald, libnotify (notify-send), and a running notification
+# daemon. Your user must be able to read the service journal (member of the
+# systemd-journal / wheel / adm group).
+#
+# Install (any systemd distro):
+#   install -Dm755 androcontrol-notify         ~/.local/bin/androcontrol-notify
+#   install -Dm644 androcontrol-notify.service ~/.config/systemd/user/androcontrol-notify.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now androcontrol-notify
+#
+# Env:
+#   ANDROCONTROL_UNIT  systemd unit to watch (default: androcontrol)
+set -u
+
+UNIT="${ANDROCONTROL_UNIT:-androcontrol}"
+
+journalctl -u "$UNIT" -f -n0 -o cat | while IFS= read -r line; do
+  case "$line" in
+    *"[AUDIT] auth_ok "*|*"[AUDIT] pair_ok "*)
+      dev=$(printf '%s' "$line" | sed -n 's/.*device="\([^"]*\)".*/\1/p')
+      [ -n "$dev" ] || dev="New device"
+      ip=$(printf '%s' "$line" | sed -n 's/.*ip=\([0-9.]*\).*/\1/p')
+      notify-send -a AndroControl "Device connected" "$dev ($ip)" || true
+      ;;
+    *"[AUDIT] disconnect "*)
+      dev=$(printf '%s' "$line" | sed -n 's/.*device="\([^"]*\)".*/\1/p')
+      notify-send -a AndroControl "Device disconnected" "$dev" || true
+      ;;
+  esac
+done

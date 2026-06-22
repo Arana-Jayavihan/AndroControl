@@ -160,22 +160,6 @@
                 description = "Whether to open the firewall port";
               };
 
-              onEvent = lib.mkOption {
-                type = lib.types.str;
-                default = "";
-                example = ''notify-send "AndroControl" "$ANDROCONTROL_EVENT: $ANDROCONTROL_DEVICE_NAME"'';
-                description = ''
-                  Shell command run on each device connect/disconnect. Event details are
-                  provided in the environment: ANDROCONTROL_EVENT (connect|disconnect),
-                  ANDROCONTROL_DEVICE_ID, ANDROCONTROL_DEVICE_NAME, ANDROCONTROL_IP, and
-                  (on disconnect) ANDROCONTROL_DURATION in seconds. Empty disables it.
-
-                  The command runs inside the (sandboxed) service unit as the service
-                  user; delivering desktop notifications from here needs access to your
-                  graphical session's bus and may require relaxing the unit sandbox.
-                '';
-              };
-
               user = lib.mkOption {
                 type = lib.types.str;
                 default = "androcontrol";
@@ -187,6 +171,13 @@
                 default = "androcontrol";
                 description = "Group to run the service as";
               };
+
+              desktopNotifications = lib.mkEnableOption ''
+                desktop notifications on device connect/disconnect. Adds a per-user
+                systemd service that tails the AndroControl journal and pops notify-send
+                in the graphical session (the server itself is sandboxed and can't reach
+                the session bus). Each desktop user must be able to read the service
+                journal (member of the systemd-journal/wheel/adm group)'';
             };
 
             config = lib.mkIf cfg.enable {
@@ -220,8 +211,7 @@
                   User = cfg.user;
                   Group = cfg.group;
                   WorkingDirectory = cfg.dataDir;
-                  ExecStart = "${cfg.package}/bin/AndroControl -addr ${cfg.bindAddress} -port ${toString cfg.port}"
-                    + lib.optionalString (cfg.onEvent != "") " -on-event ${lib.escapeShellArg cfg.onEvent}";
+                  ExecStart = "${cfg.package}/bin/AndroControl -addr ${cfg.bindAddress} -port ${toString cfg.port}";
                   # `systemctl reload androcontrol` re-reads devices.json so external
                   # revoke/cleanup changes apply without a full restart.
                   ExecReload = "${pkgs.coreutils}/bin/kill -HUP $MAINPID";
@@ -253,6 +243,36 @@
                 "d ${cfg.dataDir} 0750 ${cfg.user} ${cfg.group} -"
                 "d ${cfg.dataDir}/certs 0750 ${cfg.user} ${cfg.group} -"
               ];
+
+              # Per-user desktop notifications: a session service that watches the
+              # AndroControl journal and pops notify-send on connect/disconnect.
+              systemd.user.services.androcontrol-notify = lib.mkIf cfg.desktopNotifications {
+                description = "AndroControl connect/disconnect desktop notifications";
+                wantedBy = [ "graphical-session.target" ];
+                partOf = [ "graphical-session.target" ];
+                after = [ "graphical-session.target" ];
+                path = [ pkgs.systemd pkgs.gnused pkgs.libnotify ];
+                serviceConfig = {
+                  Restart = "always";
+                  RestartSec = 5;
+                };
+                script = ''
+                  journalctl -u androcontrol -f -n0 -o cat | while IFS= read -r line; do
+                    case "$line" in
+                      *"[AUDIT] auth_ok "*|*"[AUDIT] pair_ok "*)
+                        dev=$(printf '%s' "$line" | sed -n 's/.*device="\([^"]*\)".*/\1/p')
+                        [ -n "$dev" ] || dev="New device"
+                        ip=$(printf '%s' "$line" | sed -n 's/.*ip=\([0-9.]*\).*/\1/p')
+                        notify-send -a AndroControl "Device connected" "$dev ($ip)" || true
+                        ;;
+                      *"[AUDIT] disconnect "*)
+                        dev=$(printf '%s' "$line" | sed -n 's/.*device="\([^"]*\)".*/\1/p')
+                        notify-send -a AndroControl "Device disconnected" "$dev" || true
+                        ;;
+                    esac
+                  done
+                '';
+              };
 
               networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];
             };
