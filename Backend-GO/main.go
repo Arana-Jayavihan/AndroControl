@@ -27,6 +27,13 @@ const (
 	IdleTimeout         = 60 * time.Second
 	HeartbeatCheck      = 30 * time.Second
 
+	// HandshakeTimeout bounds the TLS handshake. It is intentionally generous
+	// because, on a first connection, the client may prompt the user to verify
+	// the server's certificate fingerprint (trust-on-first-use) — which holds the
+	// handshake open while the person reads it. Must exceed the client-side
+	// confirmation timeout. QR-paired clients skip the prompt and finish instantly.
+	HandshakeTimeout = 90 * time.Second
+
 	// Maximum length of a single protocol line. Bounds per-connection memory so a
 	// client can't exhaust RAM by streaming bytes without a newline. Comfortably
 	// above the largest legitimate message (MaxPayloadLen 2048 + framing).
@@ -671,12 +678,11 @@ func handleClient(conn net.Conn) {
 		logError("Non-TLS connection from %s", clientIP)
 		return
 	}
-	tlsConn.SetDeadline(time.Now().Add(AuthTimeoutDuration))
+	tlsConn.SetDeadline(time.Now().Add(HandshakeTimeout))
 	if err := tlsConn.Handshake(); err != nil {
-		logDebug("TLS handshake failed from %s: %v", clientIP, err)
+		logWarn("TLS handshake failed from %s: %v", clientIP, err)
 		return
 	}
-	tlsConn.SetDeadline(time.Time{})
 
 	state := tlsConn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
@@ -690,11 +696,16 @@ func handleClient(conn net.Conn) {
 	scanner.Buffer(make([]byte, 0, 4096), MaxLineLength)
 
 	// Identity handshake (mTLS cert recognition or pairing). On success the single
-	// session slot has been claimed for this connection.
+	// session slot has been claimed for this connection. This exchange is
+	// non-interactive (the enrollment token, if any, was entered before connecting),
+	// so bound it tightly.
+	tlsConn.SetDeadline(time.Now().Add(AuthTimeoutDuration))
 	deviceID, ok := authenticateClient(conn, scanner, certFP)
 	if !ok {
 		return
 	}
+	// Clear the auth deadline; the command loop sets its own per-read deadlines.
+	tlsConn.SetDeadline(time.Time{})
 	defer sessionGate.Release(conn)
 
 	// Track this connection so revoking the device can drop it immediately.
