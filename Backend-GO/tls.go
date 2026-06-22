@@ -152,12 +152,23 @@ func (tc *TLSConfig) LoadTLSConfig() (*tls.Config, error) {
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
+		// mTLS: require the client to present a certificate. We do NOT verify it
+		// against a CA (clients use self-signed certs); identity is established at
+		// the app layer by matching the cert fingerprint against the device registry
+		// (or by pairing an unknown cert with a valid enrollment token).
+		ClientAuth: tls.RequireAnyClientCert,
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
 		},
 	}, nil
+}
+
+// CertFingerprintHex returns the lowercase hex SHA-256 of a certificate's DER bytes.
+func CertFingerprintHex(cert *x509.Certificate) string {
+	sum := sha256.Sum256(cert.Raw)
+	return hex.EncodeToString(sum[:])
 }
 
 // GetCertificateFingerprint returns the full SHA256 fingerprint of the certificate

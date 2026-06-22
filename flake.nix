@@ -79,6 +79,9 @@
 
               cmd="''${1:-}"
               case "$cmd" in
+                qr|show-qr)
+                  run -show-qr
+                  ;;
                 list|list-devices)
                   run -list-devices
                   ;;
@@ -110,7 +113,7 @@
                   reload
                   ;;
                 *)
-                  echo "usage: androcontrol-ctl {list | revoke <id|name> | revoke-all | cleanup | rename <id> <name> | prune-inactive <days>}" >&2
+                  echo "usage: androcontrol-ctl {qr | list | revoke <id|name> | revoke-all | cleanup | rename <id> <name> | prune-inactive <days>}" >&2
                   exit 1
                   ;;
               esac

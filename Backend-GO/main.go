@@ -26,6 +26,11 @@ const (
 	AuthTimeoutDuration = 5 * time.Second
 	IdleTimeout         = 60 * time.Second
 	HeartbeatCheck      = 30 * time.Second
+
+	// Maximum length of a single protocol line. Bounds per-connection memory so a
+	// client can't exhaust RAM by streaming bytes without a newline. Comfortably
+	// above the largest legitimate message (MaxPayloadLen 2048 + framing).
+	MaxLineLength = 4096
 )
 
 var (
@@ -35,13 +40,14 @@ var (
 	mouseMu    sync.Mutex
 
 	// Global managers
-	connManager    *ConnectionManager
-	authManager    *AuthManager
-	rateLimiters   *ClientRateLimiters
-	tlsConfig      *TLSConfig
-	deviceManager  *DeviceManager
-	authThrottler  *AuthThrottler
-	activeConns    *ActiveConns
+	connManager   *ConnectionManager
+	authManager   *AuthManager
+	rateLimiters  *ClientRateLimiters
+	tlsConfig     *TLSConfig
+	deviceManager *DeviceManager
+	authThrottler *AuthThrottler
+	activeConns   *ActiveConns
+	sessionGate   *SessionGate
 )
 
 func init() {
@@ -55,6 +61,7 @@ func init() {
 	deviceManager = NewDeviceManager()
 	authThrottler = NewAuthThrottler()
 	activeConns = NewActiveConns()
+	sessionGate = NewSessionGate()
 }
 
 // initInputDevices creates the virtual keyboard and mouse via uinput.
@@ -251,41 +258,41 @@ func keyNameToUinput(keyName string) (int, error) {
 		"F12": uinput.KeyF12,
 
 		// Modifier keys
-		"CTRL":       uinput.KeyLeftctrl,
-		"LCTRL":      uinput.KeyLeftctrl,
-		"RCTRL":      uinput.KeyRightctrl,
-		"ALT":        uinput.KeyLeftalt,
-		"LALT":       uinput.KeyLeftalt,
-		"RALT":       uinput.KeyRightalt,
-		"SHIFT":      uinput.KeyLeftshift,
-		"LSHIFT":     uinput.KeyLeftshift,
-		"RSHIFT":     uinput.KeyRightshift,
-		"SUPER":      uinput.KeyLeftmeta,
-		"WIN":        uinput.KeyLeftmeta,
-		"META":       uinput.KeyLeftmeta,
+		"CTRL":   uinput.KeyLeftctrl,
+		"LCTRL":  uinput.KeyLeftctrl,
+		"RCTRL":  uinput.KeyRightctrl,
+		"ALT":    uinput.KeyLeftalt,
+		"LALT":   uinput.KeyLeftalt,
+		"RALT":   uinput.KeyRightalt,
+		"SHIFT":  uinput.KeyLeftshift,
+		"LSHIFT": uinput.KeyLeftshift,
+		"RSHIFT": uinput.KeyRightshift,
+		"SUPER":  uinput.KeyLeftmeta,
+		"WIN":    uinput.KeyLeftmeta,
+		"META":   uinput.KeyLeftmeta,
 
 		// Special keys
-		"TAB":        uinput.KeyTab,
-		"ESC":        uinput.KeyEsc,
-		"ESCAPE":     uinput.KeyEsc,
-		"HOME":       uinput.KeyHome,
-		"END":        uinput.KeyEnd,
-		"PAGEUP":     uinput.KeyPageup,
-		"PAGEDOWN":   uinput.KeyPagedown,
-		"DELETE":     uinput.KeyDelete,
-		"DEL":        uinput.KeyDelete,
-		"INSERT":     uinput.KeyInsert,
-		"INS":        uinput.KeyInsert,
-		"BACKSPACE":  uinput.KeyBackspace,
-		"ENTER":      uinput.KeyEnter,
-		"RETURN":     uinput.KeyEnter,
-		"SPACE":      uinput.KeySpace,
-		"CAPSLOCK":   uinput.KeyCapslock,
-		"NUMLOCK":    uinput.KeyNumlock,
-		"SCROLLLOCK": uinput.KeyScrolllock,
+		"TAB":         uinput.KeyTab,
+		"ESC":         uinput.KeyEsc,
+		"ESCAPE":      uinput.KeyEsc,
+		"HOME":        uinput.KeyHome,
+		"END":         uinput.KeyEnd,
+		"PAGEUP":      uinput.KeyPageup,
+		"PAGEDOWN":    uinput.KeyPagedown,
+		"DELETE":      uinput.KeyDelete,
+		"DEL":         uinput.KeyDelete,
+		"INSERT":      uinput.KeyInsert,
+		"INS":         uinput.KeyInsert,
+		"BACKSPACE":   uinput.KeyBackspace,
+		"ENTER":       uinput.KeyEnter,
+		"RETURN":      uinput.KeyEnter,
+		"SPACE":       uinput.KeySpace,
+		"CAPSLOCK":    uinput.KeyCapslock,
+		"NUMLOCK":     uinput.KeyNumlock,
+		"SCROLLLOCK":  uinput.KeyScrolllock,
 		"PRINTSCREEN": uinput.KeySysrq,
-		"PAUSE":      uinput.KeyPause,
-		"MENU":       uinput.KeyCompose,
+		"PAUSE":       uinput.KeyPause,
+		"MENU":        uinput.KeyCompose,
 
 		// Single letter keys (for combos)
 		"A": uinput.KeyA, "B": uinput.KeyB, "C": uinput.KeyC,
@@ -391,107 +398,118 @@ func sendResponse(conn net.Conn, response string) error {
 	return err
 }
 
-// authenticateClient handles the authentication handshake.
-// Supports two flows over a single connection:
+// authenticateClient establishes the device identity over an already-completed
+// mTLS handshake. The client's certificate fingerprint (certFP) is the credential:
 //
-//	PAIR:<enrollment_token>:<client_device_id>:<device_name> -> registers a per-device token
-//	AUTH:<device_token>                                       -> authenticates a paired device
+//   - Known + active cert  -> server replies "AUTH:OK" and returns the device ID.
+//   - Unknown cert         -> server replies "PAIR:REQUIRED" and expects a
+//     "PAIR:<enrollment_token>:<client_id>:<name>" line; on a valid enrollment token
+//     it registers THIS cert's fingerprint and replies "PAIR:OK".
 //
-// On success it returns the authenticated device ID and ok=true; on failure ok=false.
-// The authenticated TLS connection itself is the trust boundary; connection
-// lifecycle is handled by the idle read deadline and the client heartbeat.
-func authenticateClient(conn net.Conn, reader *bufio.Reader) (deviceID string, ok bool) {
-	clientID := conn.RemoteAddr().String()
+// Returns the authenticated device ID and ok=true on success.
+func authenticateClient(conn net.Conn, scanner *bufio.Scanner, certFP string) (deviceID string, ok bool) {
 	clientIP := extractIP(conn.RemoteAddr())
 
 	// Reject early if this IP is locked out from too many failed attempts.
-	if ok, remaining := authThrottler.Allowed(clientIP); !ok {
+	if allowed, remaining := authThrottler.Allowed(clientIP); !allowed {
 		logAudit("auth_blocked ip=%s lockout_remaining=%s", clientIP, remaining.Round(time.Second))
 		sendResponse(conn, "AUTH:LOCKED\n")
 		return "", false
 	}
 
-	// Set auth timeout
-	conn.SetReadDeadline(time.Now().Add(AuthTimeoutDuration))
-
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		logDebug("Auth timeout or read error from %s: %v", clientID, err)
-		sendResponse(conn, AuthTimeout.String()+"\n")
-		return "", false
-	}
-	line = strings.TrimSpace(line)
-
-	if strings.HasPrefix(line, "PAIR:") {
-		// Pairing flow: PAIR:<enrollment_token>:<client_device_id>:<device_name>
-		// (legacy clients send PAIR:<enrollment_token>:<device_name> with no id)
-		parts := strings.SplitN(line, ":", 4)
-		if len(parts) < 2 {
-			logWarn("Invalid pair format from %s", clientIP)
-			sendResponse(conn, "PAIR:INVALID\n")
+	// Recognized client certificate → authenticated by the TLS handshake itself.
+	if device := deviceManager.ValidateCert(certFP); device != nil {
+		// Enforce a single concurrent session (a different device is rejected
+		// without disturbing the active one; the same device reclaims its slot).
+		if !claimSession(conn, device.ID) {
+			logAudit("session_busy device_id=%s ip=%s", device.ID, clientIP)
+			sendResponse(conn, "AUTH:BUSY\n")
 			return "", false
 		}
-		enrollToken := strings.TrimSpace(parts[1])
-		clientDeviceID := ""
-		deviceName := ""
-		if len(parts) >= 4 {
-			clientDeviceID = strings.TrimSpace(parts[2])
-			deviceName = parts[3]
-		} else if len(parts) == 3 {
-			deviceName = parts[2]
-		}
-
-		if !authManager.Validate(enrollToken) {
-			locked := authThrottler.RecordFailure(clientIP)
-			logAudit("pair_failed ip=%s reason=bad_enrollment_token locked=%t", clientIP, locked)
-			sendResponse(conn, "PAIR:FAIL\n")
-			return "", false
-		}
-
-		id, token, err := deviceManager.Register(clientDeviceID, deviceName, clientIP)
-		if err != nil {
-			logError("Failed to register device for %s: %v", clientIP, err)
-			sendResponse(conn, "PAIR:ERROR\n")
-			return "", false
-		}
-
+		deviceManager.Touch(device.ID, clientIP)
 		authThrottler.RecordSuccess(clientIP)
-		// PAIR:OK:<device_id>:<device_token>
-		sendResponse(conn, fmt.Sprintf("PAIR:OK:%s:%s\n", id, token))
-		conn.SetReadDeadline(time.Time{})
-		logAudit("pair_ok device_id=%s ip=%s", id, clientIP)
-		return id, true
+		sendResponse(conn, "AUTH:OK\n")
+		logAudit("auth_ok device=%q device_id=%s ip=%s", device.Name, device.ID, clientIP)
+		return device.ID, true
 	}
 
-	// Authentication flow: AUTH:<device_token>
-	token, err := ParseAuthMessage(line)
+	// Unknown certificate → require pairing with a valid enrollment token.
+	sendResponse(conn, "PAIR:REQUIRED\n")
+
+	conn.SetReadDeadline(time.Now().Add(AuthTimeoutDuration))
+	if !scanner.Scan() {
+		logDebug("Pair read timeout/error from %s: %v", clientIP, scanner.Err())
+		return "", false
+	}
+	conn.SetReadDeadline(time.Time{})
+	line := strings.TrimSpace(scanner.Text())
+
+	// Expected: PAIR:<enrollment_token>:<client_id>:<device_name>
+	parts := strings.SplitN(line, ":", 4)
+	if len(parts) < 2 || parts[0] != "PAIR" {
+		locked := authThrottler.RecordFailure(clientIP)
+		logAudit("pair_failed ip=%s reason=bad_format locked=%t", clientIP, locked)
+		sendResponse(conn, "PAIR:FAIL\n")
+		return "", false
+	}
+	enrollToken := strings.TrimSpace(parts[1])
+	clientDeviceID := ""
+	deviceName := ""
+	if len(parts) >= 4 {
+		clientDeviceID = strings.TrimSpace(parts[2])
+		deviceName = parts[3]
+	} else if len(parts) == 3 {
+		deviceName = parts[2]
+	}
+
+	if !authManager.Validate(enrollToken) {
+		locked := authThrottler.RecordFailure(clientIP)
+		logAudit("pair_failed ip=%s reason=bad_enrollment_token locked=%t", clientIP, locked)
+		sendResponse(conn, "PAIR:FAIL\n")
+		return "", false
+	}
+
+	id, err := deviceManager.RegisterCert(clientDeviceID, certFP, deviceName, clientIP)
 	if err != nil {
-		locked := authThrottler.RecordFailure(clientIP)
-		logAudit("auth_failed ip=%s reason=bad_format locked=%t", clientIP, locked)
-		sendResponse(conn, AuthInvalidFormat.String()+"\n")
+		logError("Failed to register device for %s: %v", clientIP, err)
+		sendResponse(conn, "PAIR:ERROR\n")
 		return "", false
 	}
 
-	device := deviceManager.ValidateToken(token)
-	if device == nil {
-		locked := authThrottler.RecordFailure(clientIP)
-		logAudit("auth_failed ip=%s reason=unknown_or_revoked_device locked=%t", clientIP, locked)
-		sendResponse(conn, AuthFailed.String()+"\n")
+	// Pairing succeeded, but a session is still gated by the single-session rule.
+	if !claimSession(conn, id) {
+		logAudit("session_busy device_id=%s ip=%s (just paired)", id, clientIP)
+		sendResponse(conn, "AUTH:BUSY\n")
 		return "", false
 	}
-	deviceManager.Touch(device.ID, clientIP)
 
 	authThrottler.RecordSuccess(clientIP)
-	sendResponse(conn, "AUTH:OK\n")
-	conn.SetReadDeadline(time.Time{})
-	logAudit("auth_ok device=%q device_id=%s ip=%s", device.Name, device.ID, clientIP)
-	return device.ID, true
+	sendResponse(conn, "PAIR:OK\n")
+	logAudit("pair_ok device_id=%s ip=%s", id, clientIP)
+	return id, true
+}
+
+// claimSession acquires the single session slot for deviceID/conn, closing a
+// stale connection displaced by the same device reconnecting. Returns false if a
+// different device holds the session.
+func claimSession(conn net.Conn, deviceID string) bool {
+	granted, displaced := sessionGate.Acquire(deviceID, conn)
+	if !granted {
+		return false
+	}
+	if displaced != nil {
+		logAudit("session_takeover device_id=%s", deviceID)
+		displaced.Close()
+	}
+	return true
 }
 
 // handleCommand processes a single command and returns a response
-func handleCommand(msg *Message, clientID string) *Response {
+// clientIP is used as the rate-limit key so the limit is per source IP rather
+// than per connection (a new source port must not reset the bucket).
+func handleCommand(msg *Message, clientIP string) *Response {
 	// Check rate limit
-	limiter := rateLimiters.GetLimiter(clientID)
+	limiter := rateLimiters.GetLimiter(clientIP)
 	if !limiter.Allow() {
 		return NewNACKResponse(msg.SeqID, ErrCodeRateLimit)
 	}
@@ -636,22 +654,48 @@ func handleCommand(msg *Message, clientID string) *Response {
 
 func handleClient(conn net.Conn) {
 	clientAddr := conn.RemoteAddr()
-	clientID := clientAddr.String()
+	clientIP := extractIP(clientAddr)
 
 	defer func() {
 		conn.Close()
 		connManager.Release(clientAddr)
-		rateLimiters.RemoveLimiter(clientID)
+		// Note: the per-IP rate limiter is intentionally NOT removed here — it is
+		// shared across connections from the same IP and reaped by the periodic
+		// cleanup, so a reconnect can't reset its bucket.
 		log.Printf("Connection closed: %s", clientAddr)
 	}()
 
-	reader := bufio.NewReader(conn)
+	// Complete the mTLS handshake up front so we can read the client certificate.
+	tlsConn, isTLS := conn.(*tls.Conn)
+	if !isTLS {
+		logError("Non-TLS connection from %s", clientIP)
+		return
+	}
+	tlsConn.SetDeadline(time.Now().Add(AuthTimeoutDuration))
+	if err := tlsConn.Handshake(); err != nil {
+		logDebug("TLS handshake failed from %s: %v", clientIP, err)
+		return
+	}
+	tlsConn.SetDeadline(time.Time{})
 
-	// Authentication handshake
-	deviceID, ok := authenticateClient(conn, reader)
+	state := tlsConn.ConnectionState()
+	if len(state.PeerCertificates) == 0 {
+		logWarn("No client certificate presented from %s", clientIP)
+		return
+	}
+	certFP := CertFingerprintHex(state.PeerCertificates[0])
+
+	// Bounded scanner caps per-connection memory (prevents unbounded-line DoS).
+	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 0, 4096), MaxLineLength)
+
+	// Identity handshake (mTLS cert recognition or pairing). On success the single
+	// session slot has been claimed for this connection.
+	deviceID, ok := authenticateClient(conn, scanner, certFP)
 	if !ok {
 		return
 	}
+	defer sessionGate.Release(conn)
 
 	// Track this connection so revoking the device can drop it immediately.
 	activeConns.Add(deviceID, conn)
@@ -662,19 +706,20 @@ func handleClient(conn net.Conn) {
 		// Set idle timeout
 		conn.SetReadDeadline(time.Now().Add(IdleTimeout))
 
-		line, err := reader.ReadString('\n')
-		if err != nil {
+		if !scanner.Scan() {
+			err := scanner.Err()
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				log.Printf("Idle timeout for %s", clientAddr)
 				sendResponse(conn, "TIMEOUT\n")
-			} else {
-				log.Printf("Read error from %s: %v", clientAddr, err)
+			} else if err != nil {
+				// Includes bufio.ErrTooLong for over-length lines.
+				logWarn("Read error from %s: %v", clientAddr, err)
 			}
 			return
 		}
 
-		// Only trim newlines, preserve spaces in payload
-		line = strings.TrimRight(line, "\r\n")
+		// Scanner strips the trailing newline (and a trailing \r); spaces preserved.
+		line := scanner.Text()
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -704,7 +749,7 @@ func handleClient(conn net.Conn) {
 		}
 
 		// Process command
-		response := handleCommand(msg, clientID)
+		response := handleCommand(msg, clientIP)
 		if response != nil {
 			sendResponse(conn, response.String())
 		}
@@ -782,6 +827,29 @@ func runDeviceAdmin(o adminOpts) {
 	}
 }
 
+// runShowQR reprints the pairing QR (connection info + enrollment token + server
+// certificate fingerprint) without starting the server. Reuses the existing cert
+// and enrollment token, generating them only if absent (same as first run).
+func runShowQR(port int) {
+	if err := tlsConfig.EnsureCertificates(); err != nil {
+		log.Fatalf("Failed to load/generate TLS certificate: %v", err)
+	}
+	if err := authManager.Initialize(); err != nil {
+		log.Fatalf("Failed to load/generate enrollment token: %v", err)
+	}
+
+	fingerprint, err := tlsConfig.GetCertificateFingerprint()
+	if err != nil {
+		logWarn("Could not compute certificate fingerprint for QR: %v", err)
+	}
+
+	hostname, _ := os.Hostname()
+	if hostname == "" {
+		hostname = "AndroControl"
+	}
+	PrintQRCode(hostname, port, authManager.GetToken(), fingerprint)
+}
+
 func main() {
 	// CLI flags. Device-admin commands run without needing /dev/uinput.
 	addr := flag.String("addr", HOST, "Bind address (e.g. 0.0.0.0 for all interfaces, 127.0.0.1 for loopback only)")
@@ -795,6 +863,7 @@ func main() {
 	renameID := flag.String("rename", "", "Rename a device by ID (use with -name), then exit")
 	renameTo := flag.String("name", "", "New device name (used with -rename)")
 	pruneInactive := flag.Int("prune-inactive", 0, "Remove devices not seen in N days, then exit")
+	showQR := flag.Bool("show-qr", false, "Print the pairing QR code (enrollment token + cert fingerprint) and exit")
 	flag.Parse()
 
 	SetLogLevel(*logLevel)
@@ -805,6 +874,12 @@ func main() {
 		if err := os.Chdir(*dataDir); err != nil {
 			log.Fatalf("Failed to enter data dir %s: %v", *dataDir, err)
 		}
+	}
+
+	// Reprint the pairing QR without starting the server (no uinput needed).
+	if *showQR {
+		runShowQR(*port)
+		return
 	}
 
 	if *listDevices || *revoke != "" || *revokeAll || *cleanup || *renameID != "" || *pruneInactive > 0 {
@@ -902,12 +977,17 @@ func main() {
 		DefaultMaxAuthFailures, DefaultAuthFailureWindow)
 	logInfo("paired devices: %d", deviceManager.Count())
 
-	// Print QR code for easy mobile connection (includes enrollment token)
+	// Print QR code for easy mobile connection (includes enrollment token + cert
+	// fingerprint so the app can pin the certificate instead of trusting on first use).
 	hostname, _ := os.Hostname()
 	if hostname == "" {
 		hostname = "AndroControl"
 	}
-	PrintQRCode(hostname, *port, authManager.GetToken())
+	certFingerprint, fpErr := tlsConfig.GetCertificateFingerprint()
+	if fpErr != nil {
+		logWarn("Could not compute certificate fingerprint for QR: %v", fpErr)
+	}
+	PrintQRCode(hostname, *port, authManager.GetToken(), certFingerprint)
 
 	// Print certificate info (after auth token for verification)
 	tlsConfig.PrintCertificateInfo()

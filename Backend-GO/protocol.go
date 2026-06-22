@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	ProtocolVersion    = "1.1"
-	MinSupportedVersion = "1.0"
+	ProtocolVersion     = "2.0" // 2.0: mutual-TLS device identity (client certificates)
+	MinSupportedVersion = "2.0"
 )
 
 // Error codes for NACK responses
@@ -171,39 +171,4 @@ func NewPongResponse() *Response {
 // NewDataResponse creates a data response
 func NewDataResponse(seqID int, data string) *Response {
 	return &Response{Type: ResponseData, SeqID: seqID, Data: data}
-}
-
-// MessageHandler is a function that handles a parsed message
-type MessageHandler func(msg *Message) *Response
-
-// HandlerRegistry maps commands to their handlers
-type HandlerRegistry struct {
-	handlers map[string]MessageHandler
-}
-
-// NewHandlerRegistry creates a new handler registry
-func NewHandlerRegistry() *HandlerRegistry {
-	return &HandlerRegistry{
-		handlers: make(map[string]MessageHandler),
-	}
-}
-
-// Register registers a handler for a command
-func (hr *HandlerRegistry) Register(command string, handler MessageHandler) {
-	hr.handlers[command] = handler
-}
-
-// Handle processes a message using the registered handler
-func (hr *HandlerRegistry) Handle(msg *Message) *Response {
-	handler, exists := hr.handlers[msg.Command]
-	if !exists {
-		return NewNACKResponse(msg.SeqID, ErrCodeInvalidCmd)
-	}
-	return handler(msg)
-}
-
-// HasHandler checks if a handler exists for a command
-func (hr *HandlerRegistry) HasHandler(command string) bool {
-	_, exists := hr.handlers[command]
-	return exists
 }

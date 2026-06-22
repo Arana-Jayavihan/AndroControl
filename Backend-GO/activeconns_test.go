@@ -9,7 +9,7 @@ import (
 
 func TestDeviceIsActive(t *testing.T) {
 	dm := newTestDeviceManager(t)
-	id, _, _ := dm.Register("c1", "Phone", "1.1.1.1")
+	id, _ := dm.RegisterCert("c1", "fp", "Phone", "1.1.1.1")
 
 	if !dm.IsActive(id) {
 		t.Error("freshly registered device should be active")
@@ -29,7 +29,7 @@ func TestActiveConnsCloseRevoked(t *testing.T) {
 		devices: make(map[string]*Device),
 		path:    filepath.Join(t.TempDir(), "devices.json"),
 	}
-	id, _, _ := dm.Register("c1", "Phone", "1.1.1.1")
+	id, _ := dm.RegisterCert("c1", "fp", "Phone", "1.1.1.1")
 
 	srv, cli := net.Pipe()
 	defer cli.Close()

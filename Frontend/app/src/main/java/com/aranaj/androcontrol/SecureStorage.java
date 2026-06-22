@@ -203,70 +203,6 @@ public class SecureStorage {
         return result;
     }
 
-    // ---------------- Per-device tokens ----------------
-    // The enrollment/pairing token is stored under "token_<id>" (above). After a
-    // successful pairing the server issues a per-device token, stored here under
-    // "devtoken_<id>", and the enrollment token is discarded.
-
-    /** Saves a per-device token (from char[]) and clears the source array. */
-    public void saveDeviceTokenFromChars(String serverId, char[] token) {
-        if (token == null || token.length == 0) {
-            prefs.edit().remove("devtoken_" + serverId).apply();
-            return;
-        }
-        try {
-            saveEncrypted("devtoken_" + serverId, new String(token));
-        } finally {
-            clearCharArray(token);
-        }
-    }
-
-    /** Retrieves the per-device token as char[], or null if none. */
-    public char[] getDeviceTokenAsChars(String serverId) {
-        String token = getEncrypted("devtoken_" + serverId);
-        if (token == null) {
-            return null;
-        }
-        return token.toCharArray();
-    }
-
-    public boolean hasDeviceToken(String serverId) {
-        return prefs.contains("devtoken_" + serverId);
-    }
-
-    public void removeDeviceToken(String serverId) {
-        prefs.edit().remove("devtoken_" + serverId).apply();
-    }
-
-    /** Stores the server-assigned device ID (not secret, but kept with the token). */
-    public void saveDeviceId(String serverId, String deviceId) {
-        saveEncrypted("devid_" + serverId, deviceId);
-    }
-
-    public String getDeviceId(String serverId) {
-        return getEncrypted("devid_" + serverId);
-    }
-
-    public void removeDeviceId(String serverId) {
-        prefs.edit().remove("devid_" + serverId).apply();
-    }
-
-    /**
-     * Saves a token from a char[] and then clears the source array.
-     */
-    public void saveTokenFromChars(String serverId, char[] token) {
-        if (token == null || token.length == 0) {
-            prefs.edit().remove("token_" + serverId).apply();
-            return;
-        }
-        try {
-            String tokenStr = new String(token);
-            saveToken(serverId, tokenStr);
-        } finally {
-            clearCharArray(token);
-        }
-    }
-
     /**
      * Securely clears a char array by overwriting with zeros.
      * Call this immediately after using token data.
@@ -274,15 +210,6 @@ public class SecureStorage {
     public static void clearCharArray(char[] array) {
         if (array != null) {
             Arrays.fill(array, '\0');
-        }
-    }
-
-    /**
-     * Securely clears a byte array by overwriting with zeros.
-     */
-    public static void clearByteArray(byte[] array) {
-        if (array != null) {
-            Arrays.fill(array, (byte) 0);
         }
     }
 

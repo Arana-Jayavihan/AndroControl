@@ -155,29 +155,6 @@ public class HeartbeatManager {
         Log.d(TAG, "Received PONG");
     }
 
-    /**
-     * Call this when any message is received from the server.
-     * This resets the timeout since we know the connection is alive.
-     */
-    public void onMessageReceived() {
-        lastPongTime.set(System.currentTimeMillis());
-    }
-
-    /**
-     * Checks if the connection is considered alive.
-     */
-    public boolean isAlive() {
-        long timeSinceLastPong = System.currentTimeMillis() - lastPongTime.get();
-        return timeSinceLastPong < (HEARTBEAT_INTERVAL_MS + PONG_TIMEOUT_MS) * 2;
-    }
-
-    /**
-     * Gets the time since last successful heartbeat.
-     */
-    public long getTimeSinceLastHeartbeat() {
-        return System.currentTimeMillis() - lastPongTime.get();
-    }
-
     private void notifyTimeout() {
         if (listener != null) {
             mainHandler.post(() -> listener.onHeartbeatTimeout());

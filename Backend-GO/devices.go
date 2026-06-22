@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -16,26 +15,30 @@ import (
 )
 
 const (
-	DeviceTokenLength = 32 // 32 bytes -> 64 hex characters
-	DeviceIDLength    = 16 // 16 bytes -> 32 hex characters
-	DevicesFile       = "devices.json"
-	MaxDeviceNameLen  = 64
+	DeviceIDLength   = 16 // 16 bytes -> 32 hex characters
+	DevicesFile      = "devices.json"
+	MaxDeviceNameLen = 64
+	// MaxDevices bounds the registry so a holder of the enrollment token can't grow
+	// devices.json without limit. Generous for personal/self-hosted use.
+	MaxDevices = 64
 
 	// DeviceCleanupInterval is how often revoked devices are pruned automatically.
 	DeviceCleanupInterval = 24 * time.Hour
 )
 
-// Device represents a paired client device.
-// The plaintext token is never stored; only its SHA-256 hash is persisted.
+// Device represents a paired client device. With mTLS, the credential is the
+// client's certificate: we store its SHA-256 fingerprint (the cert is public;
+// possession of the matching private key — held in the device's keystore — is
+// what authenticates during the TLS handshake).
 type Device struct {
-	ID        string    `json:"id"`
-	ClientID  string    `json:"client_id,omitempty"` // stable per-install id from the client
-	Name      string    `json:"name"`
-	TokenHash string    `json:"token_hash"`
-	CreatedAt time.Time `json:"created_at"`
-	LastSeen  time.Time `json:"last_seen"`
-	LastIP    string    `json:"last_ip"`
-	Revoked   bool      `json:"revoked"`
+	ID              string    `json:"id"`
+	ClientID        string    `json:"client_id,omitempty"` // stable per-install id from the client
+	Name            string    `json:"name"`
+	CertFingerprint string    `json:"cert_fingerprint"`
+	CreatedAt       time.Time `json:"created_at"`
+	LastSeen        time.Time `json:"last_seen"`
+	LastIP          string    `json:"last_ip"`
+	Revoked         bool      `json:"revoked"`
 }
 
 // DeviceManager manages the registry of paired devices.
@@ -125,11 +128,6 @@ func (dm *DeviceManager) saveLocked() error {
 	return os.Rename(tmp, dm.path)
 }
 
-func hashToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
-}
-
 func randomHex(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
@@ -157,15 +155,15 @@ func sanitizeDeviceName(name string) string {
 	return s
 }
 
-// Register pairs a device and returns its ID and plaintext token. The plaintext
-// token is returned exactly once (to send to the client); only its hash is stored.
+// RegisterCert pairs a device by recording its client-certificate fingerprint and
+// returns the device ID.
 //
-// If clientID is non-empty and matches an existing, non-revoked device, that
-// record is reused and its token is rotated in place — this prevents a duplicate
-// entry every time the same physical device re-pairs (e.g. after the server was
-// removed and re-added in the app). A revoked record is never reused, so
-// revocation cannot be silently undone by re-pairing.
-func (dm *DeviceManager) Register(clientID, name, ip string) (id string, token string, err error) {
+//   - If clientID matches an existing, non-revoked device, that record is reused and
+//     its cert fingerprint is updated (handles app reinstall that regenerated the key).
+//   - Otherwise if the same cert fingerprint is already registered (non-revoked), that
+//     record is reused (idempotent re-pair).
+//   - A revoked record is never reused, so revocation can't be undone by re-pairing.
+func (dm *DeviceManager) RegisterCert(clientID, certFP, name, ip string) (id string, err error) {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
@@ -174,67 +172,74 @@ func (dm *DeviceManager) Register(clientID, name, ip string) (id string, token s
 	if clientID != "" {
 		for _, d := range dm.devices {
 			if d.ClientID == clientID && !d.Revoked {
-				token, err = randomHex(DeviceTokenLength)
-				if err != nil {
-					return "", "", err
-				}
-				d.TokenHash = hashToken(token)
+				d.CertFingerprint = certFP
 				d.Name = sanitizeDeviceName(name)
 				d.LastSeen = now
 				d.LastIP = ip
 				if err := dm.saveLocked(); err != nil {
-					return "", "", err
+					return "", err
 				}
 				log.Printf("Re-paired existing device %q (%s) from %s", d.Name, d.ID, ip)
-				return d.ID, token, nil
+				return d.ID, nil
 			}
 		}
 	}
 
+	for _, d := range dm.devices {
+		if !d.Revoked && d.CertFingerprint == certFP {
+			d.Name = sanitizeDeviceName(name)
+			d.LastSeen = now
+			d.LastIP = ip
+			if err := dm.saveLocked(); err != nil {
+				return "", err
+			}
+			return d.ID, nil
+		}
+	}
+
+	// New device: enforce the registry cap to bound disk growth.
+	if len(dm.devices) >= MaxDevices {
+		return "", fmt.Errorf("device limit reached (%d); revoke/clean up unused devices", MaxDevices)
+	}
+
 	id, err = randomHex(DeviceIDLength)
 	if err != nil {
-		return "", "", err
-	}
-	token, err = randomHex(DeviceTokenLength)
-	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	dev := &Device{
-		ID:        id,
-		ClientID:  clientID,
-		Name:      sanitizeDeviceName(name),
-		TokenHash: hashToken(token),
-		CreatedAt: now,
-		LastSeen:  now,
-		LastIP:    ip,
-		Revoked:   false,
+		ID:              id,
+		ClientID:        clientID,
+		Name:            sanitizeDeviceName(name),
+		CertFingerprint: certFP,
+		CreatedAt:       now,
+		LastSeen:        now,
+		LastIP:          ip,
+		Revoked:         false,
 	}
 	dm.devices[id] = dev
 
 	if err := dm.saveLocked(); err != nil {
 		delete(dm.devices, id)
-		return "", "", err
+		return "", err
 	}
 
 	log.Printf("Registered new device %q (%s) from %s", dev.Name, dev.ID, ip)
-	return id, token, nil
+	return id, nil
 }
 
-// ValidateToken returns the (non-revoked) device matching the token, or nil.
-// The comparison is constant-time and scans the whole registry to avoid leaking
-// which entry matched via timing.
-func (dm *DeviceManager) ValidateToken(token string) *Device {
+// ValidateCert returns the (non-revoked) device whose certificate fingerprint
+// matches, or nil. Scans the whole registry with a constant-time compare.
+func (dm *DeviceManager) ValidateCert(certFP string) *Device {
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
 
-	incoming := hashToken(token)
 	var match *Device
 	for _, d := range dm.devices {
 		if d.Revoked {
 			continue
 		}
-		if subtle.ConstantTimeCompare([]byte(d.TokenHash), []byte(incoming)) == 1 {
+		if subtle.ConstantTimeCompare([]byte(d.CertFingerprint), []byte(certFP)) == 1 {
 			match = d
 		}
 	}

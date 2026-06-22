@@ -20,11 +20,11 @@ var (
 
 // ConnectionManager tracks and limits active connections
 type ConnectionManager struct {
-	mu              sync.Mutex
-	connections     map[string]int    // IP -> count
-	maxTotal        int
-	maxPerIP        int
-	currentTotal    int
+	mu           sync.Mutex
+	connections  map[string]int // IP -> count
+	maxTotal     int
+	maxPerIP     int
+	currentTotal int
 }
 
 // NewConnectionManager creates a new connection manager with default limits
@@ -33,15 +33,6 @@ func NewConnectionManager() *ConnectionManager {
 		connections: make(map[string]int),
 		maxTotal:    DefaultMaxConnections,
 		maxPerIP:    DefaultMaxPerIP,
-	}
-}
-
-// NewConnectionManagerWithLimits creates a connection manager with custom limits
-func NewConnectionManagerWithLimits(maxTotal, maxPerIP int) *ConnectionManager {
-	return &ConnectionManager{
-		connections: make(map[string]int),
-		maxTotal:    maxTotal,
-		maxPerIP:    maxPerIP,
 	}
 }
 
@@ -100,47 +91,4 @@ func (cm *ConnectionManager) Release(addr net.Addr) {
 		}
 		cm.currentTotal--
 	}
-}
-
-// CurrentConnections returns the current number of active connections
-func (cm *ConnectionManager) CurrentConnections() int {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	return cm.currentTotal
-}
-
-// ConnectionsFromIP returns the number of connections from a specific IP
-func (cm *ConnectionManager) ConnectionsFromIP(ip string) int {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	return cm.connections[ip]
-}
-
-// SetLimits updates the connection limits
-func (cm *ConnectionManager) SetLimits(maxTotal, maxPerIP int) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	cm.maxTotal = maxTotal
-	cm.maxPerIP = maxPerIP
-}
-
-// Stats returns connection statistics
-func (cm *ConnectionManager) Stats() (total int, byIP map[string]int) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	byIP = make(map[string]int)
-	for ip, count := range cm.connections {
-		byIP[ip] = count
-	}
-	return cm.currentTotal, byIP
-}
-
-// IsIPAllowed checks if a new connection from the IP would be allowed
-func (cm *ConnectionManager) IsIPAllowed(addr net.Addr) bool {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	ip := extractIP(addr)
-	return cm.connections[ip] < cm.maxPerIP && cm.currentTotal < cm.maxTotal
 }

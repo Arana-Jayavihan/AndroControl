@@ -12,11 +12,11 @@ const (
 
 // RateLimiter implements a token bucket rate limiter
 type RateLimiter struct {
-	mu           sync.Mutex
-	tokens       float64
-	maxTokens    float64
-	refillRate   float64 // tokens per second
-	lastRefill   time.Time
+	mu         sync.Mutex
+	tokens     float64
+	maxTokens  float64
+	refillRate float64 // tokens per second
+	lastRefill time.Time
 }
 
 // NewRateLimiter creates a new rate limiter with specified rate and burst size
@@ -80,14 +80,6 @@ func (rl *RateLimiter) Tokens() float64 {
 	defer rl.mu.Unlock()
 	rl.refill()
 	return rl.tokens
-}
-
-// Reset resets the rate limiter to full capacity
-func (rl *RateLimiter) Reset() {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	rl.tokens = rl.maxTokens
-	rl.lastRefill = time.Now()
 }
 
 // ClientRateLimiters manages rate limiters per client using sync.Map
@@ -173,14 +165,4 @@ func (crl *ClientRateLimiters) StartCleanup(interval, maxAge time.Duration, stop
 			}
 		}
 	}()
-}
-
-// Count returns the number of active rate limiters
-func (crl *ClientRateLimiters) Count() int {
-	count := 0
-	crl.limiters.Range(func(_, _ interface{}) bool {
-		count++
-		return true
-	})
-	return count
 }

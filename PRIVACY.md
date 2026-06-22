@@ -8,8 +8,10 @@ server that **you** run on your own computer. The developers operate no servers 
 
 ## What the app stores (on your device only)
 - **Server list** — names, IP addresses and ports you add (encrypted at rest).
-- **Authentication material** — pairing tokens and the per-device token issued by
-  your server, stored using the Android Keystore (AES-GCM).
+- **Authentication material** — the pairing token (used once during setup) and this
+  device's **client-certificate key pair**, generated and held non-exportably in the
+  Android Keystore (hardware-backed where available). The private key never leaves the
+  device; the server authenticates the device via this certificate (mutual TLS).
 - **Preferences** — theme, scroll-bar and haptic settings, and a randomly generated
   per-install device identifier used so re-pairing doesn't create duplicate server
   records.
@@ -25,13 +27,16 @@ configure. Uninstalling the app removes it.
 - **Vibrate** — haptic feedback for on-screen controls.
 
 ## Network
-All communication uses TLS 1.2/1.3 with certificate pinning (trust-on-first-use).
-The app connects only to the server addresses you enter; it contacts no other
-endpoints. There are **no analytics, ads, or third-party tracking SDKs**.
+All communication uses mutual TLS 1.2/1.3: the app pins the server certificate (from
+the setup QR, or trust-on-first-use for manual setup) and authenticates itself with its
+own client certificate. The app connects only to the server addresses you enter; it
+contacts no other endpoints. There are **no analytics, ads, or third-party tracking
+SDKs**.
 
 ## What the server stores (on your machine only)
-- A device registry (`devices.json`) containing device names, **hashed** tokens
-  (never plaintext), and last-seen timestamps/IP addresses for auditing.
+- A device registry (`devices.json`) containing device names, each device's
+  **certificate fingerprint** (a SHA-256 hash — no private keys or secrets), and
+  last-seen timestamps/IP addresses for auditing.
 - Local logs, which may include client IP addresses and connection events.
 
 You control this data entirely; it is never sent anywhere.

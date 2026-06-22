@@ -14,6 +14,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
@@ -115,6 +116,22 @@ public class TlsHelper {
     }
 
     /**
+     * Pins a server certificate fingerprint out-of-band (e.g. from the setup QR),
+     * so the first connection is verified against it instead of trust-on-first-use.
+     * @param rawFingerprintHex SHA-256 of the server cert as 64 lowercase hex chars.
+     */
+    public static void pinFingerprint(Context context, String serverIp, int serverPort, String rawFingerprintHex) {
+        if (rawFingerprintHex == null) return;
+        String fp = rawFingerprintHex.trim().toLowerCase();
+        if (fp.length() != 64 || !fp.matches("[0-9a-f]+")) {
+            Log.w(TAG, "Ignoring malformed pinned fingerprint");
+            return;
+        }
+        new SecureStorage(context).saveEncrypted(KEY_PREFIX + serverIp + "_" + serverPort, fp);
+        Log.i(TAG, "Pinned certificate fingerprint for " + serverIp + ":" + serverPort);
+    }
+
+    /**
      * Returns whether we have a saved fingerprint for this server.
      */
     public boolean hasSavedFingerprint() {
@@ -150,6 +167,14 @@ public class TlsHelper {
      * If a confirmation callback is set, user confirmation is required for first use.
      */
     public SSLSocketFactory createSocketFactory() throws NoSuchAlgorithmException, KeyManagementException {
+        // Present this device's client certificate for mutual TLS.
+        KeyManager[] keyManagers;
+        try {
+            keyManagers = ClientIdentity.keyManagers();
+        } catch (Exception e) {
+            throw new KeyManagementException("Failed to load client certificate", e);
+        }
+
         TrustManager[] trustManagers = new TrustManager[]{
                 new X509TrustManager() {
                     @Override
@@ -225,7 +250,7 @@ public class TlsHelper {
         };
 
         SSLContext sslContext = SSLContext.getInstance("TLS");
-        sslContext.init(null, trustManagers, null);
+        sslContext.init(keyManagers, trustManagers, null);
         return sslContext.getSocketFactory();
     }
 

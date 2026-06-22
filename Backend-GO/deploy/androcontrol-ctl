@@ -2,7 +2,8 @@
 # androcontrol-ctl — manage paired devices on a running AndroControl service.
 #
 # Install:  sudo install -m755 androcontrol-ctl /usr/local/bin/androcontrol-ctl
-# Usage:    sudo androcontrol-ctl {list | revoke <id|name> | revoke-all | cleanup}
+# Usage:    sudo androcontrol-ctl {qr | list | revoke <id|name> | revoke-all |
+#                                   rename <id> <name> | prune-inactive <days> | cleanup}
 #
 # Override defaults via env if your install differs:
 #   ANDROCONTROL_BIN, ANDROCONTROL_DATADIR, ANDROCONTROL_USER
@@ -22,6 +23,9 @@ reload() { systemctl reload androcontrol 2>/dev/null || systemctl restart androc
 
 cmd="${1:-}"
 case "$cmd" in
+  qr|show-qr)
+    run -show-qr
+    ;;
   list|list-devices)
     run -list-devices
     ;;
@@ -53,7 +57,7 @@ case "$cmd" in
     reload
     ;;
   *)
-    echo "usage: androcontrol-ctl {list | revoke <id|name> | revoke-all | cleanup | rename <id> <name> | prune-inactive <days>}" >&2
+    echo "usage: androcontrol-ctl {qr | list | revoke <id|name> | revoke-all | cleanup | rename <id> <name> | prune-inactive <days>}" >&2
     exit 1
     ;;
 esac

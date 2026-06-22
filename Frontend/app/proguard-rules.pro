@@ -27,3 +27,9 @@
 
 # Model classes serialized/deserialized with Gson (keep their fields intact).
 -keep class com.aranaj.androcontrol.Server { <fields>; }
+
+# --- Strip debug/verbose logging from release builds (avoid info disclosure via logcat) ---
+-assumenosideeffects class android.util.Log {
+    public static int d(...);
+    public static int v(...);
+}

@@ -30,23 +30,16 @@ type TokenMetadata struct {
 
 // AuthManager handles token-based authentication
 type AuthManager struct {
-	mu        sync.RWMutex
-	token     string
-	metadata  TokenMetadata
-	maxAge    time.Duration
+	mu       sync.RWMutex
+	token    string
+	metadata TokenMetadata
+	maxAge   time.Duration
 }
 
 // NewAuthManager creates a new authentication manager
 func NewAuthManager() *AuthManager {
 	return &AuthManager{
 		maxAge: DefaultTokenTTL,
-	}
-}
-
-// NewAuthManagerWithTTL creates an auth manager with custom token TTL
-func NewAuthManagerWithTTL(ttl time.Duration) *AuthManager {
-	return &AuthManager{
-		maxAge: ttl,
 	}
 }
 
@@ -163,20 +156,6 @@ func (am *AuthManager) printExpirationInfo() {
 	}
 }
 
-// GetExpiresAt returns when the token expires
-func (am *AuthManager) GetExpiresAt() time.Time {
-	am.mu.RLock()
-	defer am.mu.RUnlock()
-	return am.metadata.ExpiresAt
-}
-
-// IsExpired checks if the token is expired
-func (am *AuthManager) IsExpired() bool {
-	am.mu.RLock()
-	defer am.mu.RUnlock()
-	return am.isTokenExpired()
-}
-
 // Validate checks if the provided token matches
 func (am *AuthManager) Validate(providedToken string) bool {
 	am.mu.RLock()
@@ -193,13 +172,6 @@ func (am *AuthManager) GetToken() string {
 	return am.token
 }
 
-// RegenerateToken creates a new token
-func (am *AuthManager) RegenerateToken() error {
-	am.mu.Lock()
-	defer am.mu.Unlock()
-	return am.regenerateTokenLocked()
-}
-
 // PrintToken displays the enrollment/pairing token for the operator.
 func (am *AuthManager) PrintToken() {
 	log.Println("╔══════════════════════════════════════════════════════════════════╗")
@@ -207,49 +179,7 @@ func (am *AuthManager) PrintToken() {
 	log.Println("╠══════════════════════════════════════════════════════════════════╣")
 	log.Printf("║  Token: %-58s ║", am.token)
 	log.Println("╠══════════════════════════════════════════════════════════════════╣")
-	log.Println("║  Use this token to PAIR a new device. Each device then receives  ║")
-	log.Println("║  its own token; revoke one with: AndroControl -revoke <id>       ║")
+	log.Println("║  Use this token to PAIR a new device. Each device is then        ║")
+	log.Println("║  identified by its certificate; revoke: AndroControl -revoke <id>║")
 	log.Println("╚══════════════════════════════════════════════════════════════════╝")
-}
-
-// AuthResult represents the result of an authentication attempt
-type AuthResult int
-
-const (
-	AuthSuccess AuthResult = iota
-	AuthFailed
-	AuthTimeout
-	AuthInvalidFormat
-)
-
-func (r AuthResult) String() string {
-	switch r {
-	case AuthSuccess:
-		return "AUTH:OK"
-	case AuthFailed:
-		return "AUTH:FAIL"
-	case AuthTimeout:
-		return "AUTH:TIMEOUT"
-	case AuthInvalidFormat:
-		return "AUTH:INVALID"
-	default:
-		return "AUTH:ERROR"
-	}
-}
-
-// ParseAuthMessage extracts the token from an AUTH message
-func ParseAuthMessage(message string) (string, error) {
-	message = strings.TrimSpace(message)
-
-	// Expected format: "AUTH:<token>"
-	if !strings.HasPrefix(message, "AUTH:") {
-		return "", fmt.Errorf("invalid auth message format")
-	}
-
-	token := strings.TrimPrefix(message, "AUTH:")
-	if len(token) == 0 {
-		return "", fmt.Errorf("empty token")
-	}
-
-	return token, nil
 }

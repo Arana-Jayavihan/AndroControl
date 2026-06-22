@@ -19,76 +19,118 @@ func setupHandshakeGlobals(t *testing.T) {
 		path:    filepath.Join(t.TempDir(), "devices.json"),
 	}
 	authThrottler = NewAuthThrottler()
+	sessionGate = NewSessionGate()
 }
 
-// doHandshake runs authenticateClient against an in-memory pipe and returns the
-// single-line response the server sends back.
-func doHandshake(t *testing.T, request string) string {
+// doMTLSHandshake runs authenticateClient with a given client-cert fingerprint over
+// an in-memory pipe and returns the response line(s) the server sent. The server
+// speaks first (AUTH:OK / PAIR:REQUIRED / AUTH:LOCKED); when PAIR:REQUIRED is seen
+// and pairLine is non-empty, it is sent and the second response collected.
+func doMTLSHandshake(t *testing.T, certFP, pairLine string) []string {
 	t.Helper()
 	serverConn, clientConn := net.Pipe()
 	defer clientConn.Close()
 
 	go func() {
-		authenticateClient(serverConn, bufio.NewReader(serverConn))
+		sc := bufio.NewScanner(serverConn)
+		sc.Buffer(make([]byte, 0, 4096), MaxLineLength)
+		authenticateClient(serverConn, sc, certFP)
 		serverConn.Close()
 	}()
 
-	if err := clientConn.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
-		t.Fatalf("set deadline: %v", err)
-	}
-	// Write concurrently with the read: on the lockout path the server replies
-	// without consuming the request, and net.Pipe is unbuffered (a real TCP
-	// socket buffers the write).
-	go func() {
-		_, _ = clientConn.Write([]byte(request))
-	}()
-	resp, err := bufio.NewReader(clientConn).ReadString('\n')
+	_ = clientConn.SetDeadline(time.Now().Add(2 * time.Second))
+	r := bufio.NewReader(clientConn)
+
+	first, err := r.ReadString('\n')
 	if err != nil {
-		t.Fatalf("read: %v", err)
+		t.Fatalf("read first response: %v", err)
 	}
-	return strings.TrimSpace(resp)
+	resps := []string{strings.TrimSpace(first)}
+
+	if resps[0] == "PAIR:REQUIRED" && pairLine != "" {
+		if _, err := clientConn.Write([]byte(pairLine + "\n")); err != nil {
+			t.Fatalf("write pair line: %v", err)
+		}
+		second, err := r.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read second response: %v", err)
+		}
+		resps = append(resps, strings.TrimSpace(second))
+	}
+	return resps
 }
 
-func TestHandshakePairThenAuth(t *testing.T) {
+func TestMTLSKnownCertAuthOK(t *testing.T) {
+	setupHandshakeGlobals(t)
+	if _, err := deviceManager.RegisterCert("c", "known-fp", "Phone", "1.1.1.1"); err != nil {
+		t.Fatalf("pre-register: %v", err)
+	}
+	resps := doMTLSHandshake(t, "known-fp", "")
+	if len(resps) != 1 || resps[0] != "AUTH:OK" {
+		t.Fatalf("expected AUTH:OK for known cert, got %v", resps)
+	}
+}
+
+func TestMTLSPairThenRecognize(t *testing.T) {
 	setupHandshakeGlobals(t)
 
-	resp := doHandshake(t, "PAIR:enroll-secret:client-1:My Phone\n")
-	if !strings.HasPrefix(resp, "PAIR:OK:") {
-		t.Fatalf("expected PAIR:OK, got %q", resp)
+	resps := doMTLSHandshake(t, "new-fp", "PAIR:enroll-secret:client-1:My Phone")
+	if len(resps) != 2 || resps[0] != "PAIR:REQUIRED" || resps[1] != "PAIR:OK" {
+		t.Fatalf("expected [PAIR:REQUIRED PAIR:OK], got %v", resps)
 	}
-	parts := strings.Split(resp, ":")
-	if len(parts) != 4 {
-		t.Fatalf("expected PAIR:OK:<id>:<token>, got %q", resp)
-	}
-	deviceToken := parts[3]
 
-	if got := doHandshake(t, "AUTH:"+deviceToken+"\n"); got != "AUTH:OK" {
-		t.Fatalf("expected AUTH:OK, got %q", got)
+	// The same cert is now recognized at the handshake.
+	again := doMTLSHandshake(t, "new-fp", "")
+	if len(again) != 1 || again[0] != "AUTH:OK" {
+		t.Fatalf("expected AUTH:OK after pairing, got %v", again)
 	}
 }
 
-func TestHandshakeBadEnrollment(t *testing.T) {
+func TestMTLSSecondDeviceBusy(t *testing.T) {
 	setupHandshakeGlobals(t)
-	if got := doHandshake(t, "PAIR:wrong-token:client-1:Phone\n"); got != "PAIR:FAIL" {
-		t.Fatalf("expected PAIR:FAIL, got %q", got)
+	deviceManager.RegisterCert("cA", "certA", "Phone A", "1.1.1.1")
+	deviceManager.RegisterCert("cB", "certB", "Phone B", "1.1.1.2")
+
+	// Device A claims the single session slot.
+	if got := doMTLSHandshake(t, "certA", ""); got[0] != "AUTH:OK" {
+		t.Fatalf("device A should get AUTH:OK, got %v", got)
+	}
+	// Device B is refused without disturbing A's session.
+	if got := doMTLSHandshake(t, "certB", ""); got[0] != "AUTH:BUSY" {
+		t.Fatalf("device B should get AUTH:BUSY while A holds the session, got %v", got)
 	}
 }
 
-func TestHandshakeUnknownDevice(t *testing.T) {
+func TestMTLSSameDeviceTakeover(t *testing.T) {
 	setupHandshakeGlobals(t)
-	if got := doHandshake(t, "AUTH:deadbeef\n"); got != "AUTH:FAIL" {
-		t.Fatalf("expected AUTH:FAIL, got %q", got)
+	deviceManager.RegisterCert("cA", "certA", "Phone A", "1.1.1.1")
+
+	if got := doMTLSHandshake(t, "certA", ""); got[0] != "AUTH:OK" {
+		t.Fatalf("first connect should get AUTH:OK, got %v", got)
+	}
+	// The same device reconnecting reclaims its own slot.
+	if got := doMTLSHandshake(t, "certA", ""); got[0] != "AUTH:OK" {
+		t.Fatalf("same device reconnect should get AUTH:OK (takeover), got %v", got)
 	}
 }
 
-func TestHandshakeLockout(t *testing.T) {
+func TestMTLSBadEnrollment(t *testing.T) {
+	setupHandshakeGlobals(t)
+	resps := doMTLSHandshake(t, "x-fp", "PAIR:wrong-token:client-1:Phone")
+	if resps[len(resps)-1] != "PAIR:FAIL" {
+		t.Fatalf("expected PAIR:FAIL for bad enrollment token, got %v", resps)
+	}
+}
+
+func TestMTLSLockout(t *testing.T) {
 	setupHandshakeGlobals(t)
 	authThrottler.maxFailures = 3 // net.Pipe RemoteAddr is constant, so all share an IP
 
 	for i := 0; i < 3; i++ {
-		doHandshake(t, "AUTH:bad\n")
+		doMTLSHandshake(t, "bad-fp", "PAIR:wrong-token:c:Phone")
 	}
-	if got := doHandshake(t, "AUTH:bad\n"); got != "AUTH:LOCKED" {
-		t.Fatalf("expected AUTH:LOCKED after repeated failures, got %q", got)
+	resps := doMTLSHandshake(t, "bad-fp2", "PAIR:wrong-token:c:Phone")
+	if resps[0] != "AUTH:LOCKED" {
+		t.Fatalf("expected AUTH:LOCKED after repeated failures, got %v", resps)
 	}
 }

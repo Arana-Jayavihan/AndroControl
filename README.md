@@ -66,6 +66,7 @@ The solution follows a client-server architecture:
   -port int            TCP port to listen on (default 5050)
   -data-dir string     Directory with certs/, auth_token, devices.json (default: current dir)
   -log-level string    Log verbosity: debug, info, warn, error (default "info")
+  -show-qr             Reprint the pairing QR (token + cert fingerprint) and exit
   -list-devices        List paired devices and exit
   -revoke <id|name>    Revoke a paired device by ID or name, then exit
   -revoke-all          Revoke all paired devices, then exit
@@ -82,15 +83,16 @@ The server stops cleanly on `Ctrl+C` / `SIGTERM`, releasing the virtual input de
 2. Install on your Android device
 3. **Pair via QR code** (recommended):
    - Open the app and tap the QR scanner icon
-   - Scan the QR code displayed by the server
-   - Verify the certificate fingerprint and accept
+   - Scan the QR code displayed by the server (or reprint it with `androcontrol-ctl qr`)
+   - The app pins the server's certificate from the QR and pairs automatically
 4. **Or pair manually**:
    - Add a new server with IP, port, and the pairing token
-   - Verify the certificate fingerprint on first connection
+   - Verify the certificate fingerprint shown on first connection (trust-on-first-use)
 
-On first connection the app exchanges the pairing token for its **own per-device token**
-(the pairing token is then discarded on the phone). Each device can be revoked
-independently from the server.
+On first connection the app presents the pairing token once and the server records this
+device's **client-certificate fingerprint**; the pairing token is then discarded on the
+phone. Afterwards the device is recognized by its certificate (mutual TLS) and can be
+revoked independently from the server.
 
 ### Managing paired devices
 
@@ -99,13 +101,18 @@ command as the service user against the right data directory and reloads the
 service for you:
 
 ```bash
-sudo androcontrol-ctl list                  # list devices (id, name, status, last seen, IP)
-sudo androcontrol-ctl revoke <id-or-name>   # revoke one device (by ID or name)
-sudo androcontrol-ctl revoke-all            # revoke every device
-sudo androcontrol-ctl rename <id> <name>    # rename a device
-sudo androcontrol-ctl prune-inactive <days> # drop devices not seen in N days
-sudo androcontrol-ctl cleanup               # drop revoked devices from the registry
+sudo androcontrol-ctl qr                     # reprint the pairing QR (to add a new device)
+sudo androcontrol-ctl list                   # list devices (id, name, status, last seen, IP)
+sudo androcontrol-ctl revoke <id-or-name>    # revoke one device (by ID or name)
+sudo androcontrol-ctl revoke-all             # revoke every device
+sudo androcontrol-ctl rename <id> <name>     # rename a device
+sudo androcontrol-ctl prune-inactive <days>  # drop devices not seen in N days
+sudo androcontrol-ctl cleanup                # drop revoked devices from the registry
 ```
+
+To **pair an additional device** after first setup, run `androcontrol-ctl qr` to
+reprint the QR (it contains the enrollment token and the server's certificate
+fingerprint) and scan it from the app.
 
 The NixOS module installs `androcontrol-ctl` automatically. For the plain systemd
 deploy, install it once:
@@ -155,31 +162,43 @@ prompted so the status is visible.
 
 ### This device / unpairing
 - **Settings → This device** shows this install's name and device ID.
-- To unpair, open a server's **Edit** dialog and tap **Unpair**. If you're connected to
-  that server the server revokes this device immediately; otherwise the pairing is
-  removed locally (revoke it on the server too if it's still listed).
+- To unpair, open a server's **Edit** dialog and tap **Unpair**. If you're connected,
+  the server revokes this device's certificate immediately. If you're offline, connect
+  first (or revoke the device on the server) — the certificate identity is shared
+  across servers, so there's nothing per-server to remove locally.
 
 ## Security
 
 ### TLS Encryption
 All communication between the app and server is encrypted using TLS 1.2 or 1.3. The server generates a self-signed certificate on first run.
 
-### Certificate Pinning (TOFU)
-On first connection, the app displays the server's certificate fingerprint for verification. Once accepted, the fingerprint is saved and verified on subsequent connections. If the certificate changes, you'll receive a warning. Pinning is **fail-closed** — the app never silently trusts an unverified certificate.
+### Certificate Pinning
+The QR code embeds the server's SHA-256 certificate fingerprint, so a **QR-paired
+server is pinned immediately** — no trust-on-first-use window. For manual setup the
+app falls back to TOFU: it shows the fingerprint for you to verify, saves it, and
+verifies it on every later connection (warning on change). Pinning is **fail-closed**
+— the app never silently trusts an unverified certificate.
 
 ### Brute-force protection
 Repeated failed pairing/authentication attempts from an IP are rate-limited: after
 5 failures within 5 minutes the IP is locked out for 15 minutes. All pairing and
 authentication events are written to the log with an `[AUDIT]` prefix.
 
-### Per-device Authentication
-The server generates a long-lived **enrollment (pairing) token** on first run. A device
-presents this token once to *pair*; the server then issues that device its **own
-per-device token**, which the app stores (Android Keystore, AES-GCM). Per-device tokens:
+### Per-device Authentication (mutual TLS)
+Each device has its own **client certificate** whose private key is generated in the
+Android Keystore (non-exportable, hardware-backed where available). The device proves
+its identity during the **mutual-TLS handshake** — no bearer token is sent or stored
+that could be copied or replayed.
 
-- can be **revoked individually** (`-revoke <id>`) without affecting other devices,
-- are stored on the server as **SHA-256 hashes only** (never plaintext),
-- record last-seen time and IP for basic auditing (`-list-devices`).
+- **Pairing:** the server generates a long-lived **enrollment (pairing) token** on
+  first run. To pair, a device (presenting its client cert) sends the enrollment token
+  once; the server records the device's certificate **fingerprint** in `devices.json`.
+- **Subsequent connections:** the server recognizes the device by its certificate at
+  the TLS handshake — pairing/tokens are not involved again.
+- Devices can be **revoked individually** (`-revoke <id>`); the cert is then rejected
+  at the handshake and any live connection is dropped.
+- The registry stores certificate **fingerprints only** (the cert is public; the
+  private key never leaves the device), plus last-seen time/IP for auditing.
 
 Anyone with the enrollment token can pair a new device, so treat the QR code / token
 as a secret and rotate it (delete `auth_token` and restart) if it leaks.
@@ -188,6 +207,12 @@ as a secret and rotate it (delete `auth_token` and restart) if it leaks.
 The authenticated TLS connection is the trust boundary. Idle connections are closed
 by a server-side read deadline, and the client sends periodic heartbeats (PING/PONG)
 to keep an active connection alive and detect drops.
+
+### Single active session
+The server allows **only one active control session at a time**. While a device is
+connected, a connection attempt from a **different** device is rejected (`AUTH:BUSY`)
+without disturbing the active session. The **same** device reconnecting (e.g. after a
+network drop or app restart) reclaims its own slot, displacing the stale connection.
 
 ## Network Configuration
 

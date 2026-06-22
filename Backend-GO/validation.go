@@ -72,23 +72,6 @@ func ValidateMouseButton(button string) error {
 	}
 }
 
-// SanitizeText removes control characters and limits text length
-func SanitizeText(text string) (string, error) {
-	if len(text) > MaxTextLength {
-		return "", ErrTextTooLong
-	}
-
-	// Remove control characters except newline and tab
-	var sanitized strings.Builder
-	for _, r := range text {
-		if r == '\n' || r == '\t' || !unicode.IsControl(r) {
-			sanitized.WriteRune(r)
-		}
-	}
-
-	return sanitized.String(), nil
-}
-
 // SanitizeTextStrict performs strict text sanitization with additional security checks
 func SanitizeTextStrict(text string) (string, error) {
 	if len(text) > MaxTextLength {
@@ -213,29 +196,4 @@ func ValidateKeyCombo(combo string) error {
 	}
 
 	return nil
-}
-
-// ValidateCommand checks if command is in the allowed set
-func ValidateCommand(command string) bool {
-	validCommands := map[string]bool{
-		"M":         true, // Mouse move
-		"C":         true, // Click
-		"S":         true, // Scroll
-		"T":         true, // Type text
-		"CHAR":      true, // Single character (real-time typing)
-		"TB":        true, // Backspace
-		"SPACE":     true, // Space
-		"ENTER":     true, // Enter
-		"KEY":       true, // Single key press
-		"KEYDOWN":   true, // Key down (hold)
-		"KEYUP":     true, // Key up (release)
-		"COMBO":     true, // Key combination
-		"DBLCLICK":  true, // Double click
-		"MOUSEDOWN": true, // Mouse button down
-		"MOUSEUP":   true, // Mouse button up
-		"PING":      true, // Heartbeat
-		"AUTH":      true, // Authentication
-		"VERSION":   true, // Version negotiation
-	}
-	return validCommands[command]
 }

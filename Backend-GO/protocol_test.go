@@ -66,10 +66,11 @@ func TestFormatACKNACK(t *testing.T) {
 }
 
 func TestFormatVersionResponse(t *testing.T) {
-	if got := FormatVersionResponse(ProtocolVersion); got != "VERSION:1.1:OK\n" {
+	if got := FormatVersionResponse(ProtocolVersion); got != "VERSION:"+ProtocolVersion+":OK\n" {
 		t.Errorf("same version=%q", got)
 	}
-	if got := FormatVersionResponse("1.0"); got != "VERSION:1.1:COMPATIBLE\n" {
+	// Same major version, different minor → compatible.
+	if got := FormatVersionResponse("2.9"); got != "VERSION:"+ProtocolVersion+":COMPATIBLE\n" {
 		t.Errorf("same major=%q", got)
 	}
 }

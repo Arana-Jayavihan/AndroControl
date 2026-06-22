@@ -36,16 +36,6 @@ public class Server {
     public String getId() { return id; }
 
     /**
-     * Gets the auth token as a String. Note: prefer getAuthTokenChars() for security.
-     * @deprecated Use getAuthTokenChars() for better memory security
-     */
-    @Deprecated
-    public String getAuthToken() {
-        if (authToken == null) return null;
-        return new String(authToken);
-    }
-
-    /**
      * Gets a copy of the auth token as char[].
      * Caller is responsible for clearing with SecureStorage.clearCharArray().
      */

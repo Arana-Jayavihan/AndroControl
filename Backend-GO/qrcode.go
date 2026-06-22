@@ -11,10 +11,11 @@ import (
 
 // ServerInfo contains the connection information for QR code
 type ServerInfo struct {
-	Name  string `json:"name"`
-	IP    string `json:"ip"`
-	Port  int    `json:"port"`
-	Token string `json:"token"`
+	Name        string `json:"name"`
+	IP          string `json:"ip"`
+	Port        int    `json:"port"`
+	Token       string `json:"token"`
+	Fingerprint string `json:"fp,omitempty"` // SHA-256 of the server cert (hex) for pinning
 }
 
 // GetLocalIP returns the local IP address of the machine
@@ -57,12 +58,13 @@ func GetLocalIP() string {
 }
 
 // GenerateServerInfoJSON creates the JSON payload for the QR code
-func GenerateServerInfoJSON(name string, ip string, port int, token string) (string, error) {
+func GenerateServerInfoJSON(name string, ip string, port int, token string, fingerprint string) (string, error) {
 	info := ServerInfo{
-		Name:  name,
-		IP:    ip,
-		Port:  port,
-		Token: token,
+		Name:        name,
+		IP:          ip,
+		Port:        port,
+		Token:       token,
+		Fingerprint: fingerprint,
 	}
 
 	data, err := json.Marshal(info)
@@ -114,11 +116,13 @@ func GenerateQRCodeASCII(data string) (string, error) {
 	return sb.String(), nil
 }
 
-// PrintQRCode prints the QR code with connection info to the terminal
-func PrintQRCode(name string, port int, token string) {
+// PrintQRCode prints the QR code with connection info to the terminal.
+// fingerprint is the server cert SHA-256 (hex); embedding it lets the app pin the
+// certificate on first connect instead of trusting it blindly (TOFU).
+func PrintQRCode(name string, port int, token string, fingerprint string) {
 	ip := GetLocalIP()
 
-	jsonData, err := GenerateServerInfoJSON(name, ip, port, token)
+	jsonData, err := GenerateServerInfoJSON(name, ip, port, token, fingerprint)
 	if err != nil {
 		fmt.Printf("Failed to generate QR data: %v\n", err)
 		return

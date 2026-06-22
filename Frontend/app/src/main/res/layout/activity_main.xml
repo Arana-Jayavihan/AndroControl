@@ -109,6 +109,7 @@
                         android:id="@+id/touchPad"
                         android:layout_width="match_parent"
                         android:layout_height="match_parent"
+                        android:filterTouchesWhenObscured="true"
                         android:background="@drawable/touchpad_modern_bg"/>
 
                     <!-- Edge scroll-zone indicators (visual only; touches pass through to the
@@ -182,6 +183,7 @@
                     style="@style/Widget.AndroControl.Button.Mouse.Primary"
                     android:layout_width="0dp"
                     android:layout_weight="1"
+                    android:filterTouchesWhenObscured="true"
                     android:text="@string/mouse_left"/>
 
                 <com.google.android.material.button.MaterialButton
@@ -190,6 +192,7 @@
                     android:layout_width="0dp"
                     android:layout_weight="1"
                     android:layout_marginHorizontal="8dp"
+                    android:filterTouchesWhenObscured="true"
                     android:text="@string/mouse_middle"/>
 
                 <com.google.android.material.button.MaterialButton
@@ -197,6 +200,7 @@
                     style="@style/Widget.AndroControl.Button.Mouse"
                     android:layout_width="0dp"
                     android:layout_weight="1"
+                    android:filterTouchesWhenObscured="true"
                     android:text="@string/mouse_right"/>
             </LinearLayout>
 

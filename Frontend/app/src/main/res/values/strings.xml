@@ -18,8 +18,6 @@
     <string name="mouse_right">Right</string>
 
     <!-- Keyboard -->
-    <string name="btn_keyboard">Keyboard</string>
-    <string name="btn_hide_keyboard">Hide Keyboard</string>
     <string name="key_backspace">⌫</string>
     <string name="key_space">Space</string>
     <string name="key_enter">Enter</string>
@@ -96,10 +94,9 @@
     <string name="msg_server_added_named">Server added: %1$s</string>
     <string name="msg_disconnected">Disconnected from server</string>
     <string name="msg_no_token">No pairing token configured</string>
-    <string name="msg_auth_failed">Authentication failed</string>
     <string name="msg_pairing_failed">Pairing failed. Check the pairing token and try again.</string>
-    <string name="msg_device_revoked">This device\'s access was revoked. Re-pair with a pairing token.</string>
     <string name="msg_locked">Too many failed attempts. The server locked out this network — try again later.</string>
+    <string name="msg_server_busy">Another device is already connected. Only one device can control the server at a time.</string>
 
     <!-- Foreground connection service -->
     <string name="notif_channel_name">Active connection</string>
@@ -116,7 +113,7 @@
     <string name="dialog_unpair_title">Unpair this device?</string>
     <string name="dialog_unpair_message">Remove this device\'s pairing with \"%1$s\". You\'ll need a pairing token to reconnect. If connected, the server will revoke it immediately; otherwise revoke it on the server.</string>
     <string name="msg_unpaired">Unpaired from this device</string>
-    <string name="msg_not_paired">This device isn\'t paired with that server</string>
+    <string name="msg_unpair_offline">Connect to this server to unpair, or revoke this device on the server.</string>
     <string name="msg_connected_to">Connected to %1$s</string>
     <string name="msg_connection_failed">Connection failed: %1$s</string>
     <string name="msg_heartbeat_lost">Connection lost (heartbeat timeout)</string>

@@ -2,18 +2,6 @@ package main
 
 import "testing"
 
-func TestParseAuthMessage(t *testing.T) {
-	if tok, err := ParseAuthMessage("AUTH:abc123"); err != nil || tok != "abc123" {
-		t.Errorf("got tok=%q err=%v", tok, err)
-	}
-	if _, err := ParseAuthMessage("AUTH:"); err == nil {
-		t.Error("expected error for empty token")
-	}
-	if _, err := ParseAuthMessage("HELLO:abc"); err == nil {
-		t.Error("expected error for non-AUTH message")
-	}
-}
-
 func TestAuthManagerValidate(t *testing.T) {
 	am := &AuthManager{token: "deadbeefdeadbeef"}
 

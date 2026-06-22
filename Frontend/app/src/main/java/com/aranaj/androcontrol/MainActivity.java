@@ -104,6 +104,11 @@ public class MainActivity extends AppCompatActivity implements
     // Suppresses the "connection lost" toast when we deliberately closed the link (e.g. unpair).
     private volatile boolean suppressConnectionLostToast = false;
 
+    // Skips the next onResume auto-reconnect when returning from an in-app screen
+    // (QR scanner / Settings) rather than from the background, so it doesn't stack
+    // a connection attempt (and its dialogs) on top of, e.g., the QR connect prompt.
+    private boolean suppressResumeReconnect = false;
+
     private String serverIp = "";
     private int serverPort = 5050;
     private SSLSocket socket;
@@ -293,8 +298,6 @@ public class MainActivity extends AppCompatActivity implements
             public void onDelete(int position) {
                 Server server = serverManager.getServers().get(position);
                 secureStorage.removeToken(server.getId());
-                secureStorage.removeDeviceToken(server.getId());
-                secureStorage.removeDeviceId(server.getId());
                 serverManager.removeServer(position);
                 serverAdapter.notifyItemRemoved(position);
             }
@@ -349,6 +352,7 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == R.id.action_settings) {
+            suppressResumeReconnect = true; // returning here is in-app navigation
             startActivity(new Intent(this, SettingsActivity.class));
             return true;
         }
@@ -996,8 +1000,8 @@ public class MainActivity extends AppCompatActivity implements
                     serverAdapter.notifyItemInserted(serverManager.getServers().size() - 1);
                     Toast.makeText(this, R.string.msg_server_added, Toast.LENGTH_SHORT).show();
                 })
-                .setNegativeButton(R.string.action_cancel, null)
-                .show();
+                .setNegativeButton(R.string.action_cancel, null);
+        secureShow(builder);
     }
 
     private void showEditServerDialog(int position) {
@@ -1054,16 +1058,12 @@ public class MainActivity extends AppCompatActivity implements
                     serverAdapter.notifyItemChanged(position);
                 })
                 .setNeutralButton(R.string.action_unpair, (dialog, which) -> confirmUnpair(server))
-                .setNegativeButton(R.string.action_cancel, null)
-                .show();
+                .setNegativeButton(R.string.action_cancel, null);
+        secureShow(builder);
     }
 
     /** Confirms then unpairs this device from the given server. */
     private void confirmUnpair(Server server) {
-        if (!secureStorage.hasDeviceToken(server.getId())) {
-            Toast.makeText(this, R.string.msg_not_paired, Toast.LENGTH_SHORT).show();
-            return;
-        }
         new MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.dialog_unpair_title)
                 .setMessage(getString(R.string.dialog_unpair_message, server.getName()))
@@ -1073,8 +1073,10 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     /**
-     * Removes this device's pairing with the server. If currently connected to it,
-     * also asks the server to revoke this device, then disconnects.
+     * Unpairs this device from the server. With mTLS the credential is this device's
+     * client certificate (shared across servers), so unpairing means asking the
+     * connected server to revoke it. When not connected we can't revoke remotely;
+     * the user should revoke the device on the server (or connect first).
      */
     private void unpairDevice(Server server) {
         boolean connectedToThis = currentServer == server
@@ -1085,22 +1087,19 @@ public class MainActivity extends AppCompatActivity implements
             suppressConnectionLostToast = true; // server will close the link after revoking
             executorService.execute(() -> {
                 try {
-                    protocol.sendUnpair(); // server revokes this device, then closes
+                    protocol.sendUnpair(); // server revokes this device's certificate, then closes
                 } catch (Exception e) {
                     Log.w(TAG, "Unpair request failed", e);
                 }
-                secureStorage.removeDeviceToken(server.getId());
-                secureStorage.removeDeviceId(server.getId());
                 mainHandler.post(() -> {
                     disconnectFromServer();
                     Toast.makeText(this, R.string.msg_unpaired, Toast.LENGTH_SHORT).show();
                 });
             });
         } else {
-            // Not connected — clear the local pairing only.
-            secureStorage.removeDeviceToken(server.getId());
-            secureStorage.removeDeviceId(server.getId());
-            Toast.makeText(this, R.string.msg_unpaired, Toast.LENGTH_SHORT).show();
+            // Forget any stored enrollment token; remote revocation needs a connection.
+            secureStorage.removeToken(server.getId());
+            Toast.makeText(this, R.string.msg_unpair_offline, Toast.LENGTH_LONG).show();
         }
     }
 
@@ -1318,46 +1317,23 @@ public class MainActivity extends AppCompatActivity implements
 
                 protocol.setStreams(out, in);
 
-                // Per-device authentication:
-                //  - If we already have a per-device token, authenticate with it.
-                //  - Otherwise pair using the enrollment token to obtain one.
-                char[] deviceToken = secureStorage.getDeviceTokenAsChars(server.getId());
+                // mTLS identity handshake: the server either recognizes our client
+                // certificate, or asks us to pair using the enrollment token.
+                char[] enrollToken = server.getAuthTokenChars(); // may be null once paired
+                Protocol.AuthOutcome outcome = protocol.establishSession(
+                        enrollToken, settingsManager.getClientDeviceId(), getDeviceName());
 
-                if (deviceToken != null) {
-                    // authenticate() clears the token array after use.
-                    if (!protocol.authenticate(deviceToken)) {
-                        // Distinguish a temporary lockout from an actual revocation.
-                        boolean locked = protocol.wasLastAttemptLocked();
-                        if (!locked) {
-                            // Rejected — device revoked or the server was reset.
-                            secureStorage.removeDeviceToken(server.getId());
-                            secureStorage.removeDeviceId(server.getId());
-                        }
+                switch (outcome) {
+                    case AUTHENTICATED:
+                        break; // certificate recognized
+                    case PAIRED:
+                        // Discard the enrollment token; the client certificate is the credential now.
+                        secureStorage.removeToken(server.getId());
+                        server.clearAuthToken();
+                        break;
+                    case NEEDS_ENROLLMENT:
                         synchronized (connectionLock) {
-                            if (currentServer == server) {
-                                isConnecting = false;
-                            }
-                        }
-                        mainHandler.post(() -> {
-                            if (locked) {
-                                Toast.makeText(this, R.string.msg_locked, Toast.LENGTH_LONG).show();
-                            } else {
-                                Toast.makeText(this, R.string.msg_device_revoked, Toast.LENGTH_LONG).show();
-                                showTokenInputDialog(server);
-                            }
-                            server.setConnected(false);
-                            serverAdapter.notifyDataSetChanged();
-                        });
-                        socket.close();
-                        return;
-                    }
-                } else {
-                    char[] enrollToken = server.getAuthTokenChars();
-                    if (enrollToken == null || enrollToken.length == 0) {
-                        synchronized (connectionLock) {
-                            if (currentServer == server) {
-                                isConnecting = false;
-                            }
+                            if (currentServer == server) isConnecting = false;
                         }
                         mainHandler.post(() -> {
                             Toast.makeText(this, R.string.msg_no_token, Toast.LENGTH_SHORT).show();
@@ -1365,33 +1341,40 @@ public class MainActivity extends AppCompatActivity implements
                         });
                         socket.close();
                         return;
-                    }
-
-                    // pair() clears the enrollment token array after use.
-                    Protocol.PairResult pairResult = protocol.pair(
-                            enrollToken, settingsManager.getClientDeviceId(), getDeviceName());
-                    if (pairResult == null) {
-                        boolean locked = protocol.wasLastAttemptLocked();
+                    case LOCKED:
                         synchronized (connectionLock) {
-                            if (currentServer == server) {
-                                isConnecting = false;
-                            }
+                            if (currentServer == server) isConnecting = false;
                         }
                         mainHandler.post(() -> {
-                            Toast.makeText(this, locked ? R.string.msg_locked : R.string.msg_pairing_failed,
-                                    Toast.LENGTH_LONG).show();
+                            Toast.makeText(this, R.string.msg_locked, Toast.LENGTH_LONG).show();
                             server.setConnected(false);
                             serverAdapter.notifyDataSetChanged();
                         });
                         socket.close();
                         return;
-                    }
-
-                    // Persist the per-device token and discard the enrollment token.
-                    secureStorage.saveDeviceTokenFromChars(server.getId(), pairResult.deviceToken);
-                    secureStorage.saveDeviceId(server.getId(), pairResult.deviceId);
-                    secureStorage.removeToken(server.getId());
-                    server.clearAuthToken();
+                    case BUSY:
+                        synchronized (connectionLock) {
+                            if (currentServer == server) isConnecting = false;
+                        }
+                        mainHandler.post(() -> {
+                            Toast.makeText(this, R.string.msg_server_busy, Toast.LENGTH_LONG).show();
+                            server.setConnected(false);
+                            serverAdapter.notifyDataSetChanged();
+                        });
+                        socket.close();
+                        return;
+                    case FAILED:
+                    default:
+                        synchronized (connectionLock) {
+                            if (currentServer == server) isConnecting = false;
+                        }
+                        mainHandler.post(() -> {
+                            Toast.makeText(this, R.string.msg_pairing_failed, Toast.LENGTH_LONG).show();
+                            server.setConnected(false);
+                            serverAdapter.notifyDataSetChanged();
+                        });
+                        socket.close();
+                        return;
                 }
 
                 // Final check before completing connection
@@ -1694,7 +1677,7 @@ public class MainActivity extends AppCompatActivity implements
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_token_input, null);
         TextInputEditText tokenInput = dialogView.findViewById(R.id.tokenInput);
 
-        new MaterialAlertDialogBuilder(this)
+        AlertDialog.Builder builder = new MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.dialog_auth_title)
                 .setMessage(R.string.dialog_auth_message)
                 .setView(dialogView)
@@ -1706,8 +1689,22 @@ public class MainActivity extends AppCompatActivity implements
                         connectToServer(server);
                     }
                 })
-                .setNegativeButton(R.string.action_cancel, null)
-                .show();
+                .setNegativeButton(R.string.action_cancel, null);
+        secureShow(builder);
+    }
+
+    /**
+     * Creates and shows a dialog with FLAG_SECURE so its contents (e.g. the pairing
+     * token) can't be captured in screenshots, the Recents thumbnail, or screen recordings.
+     */
+    private void secureShow(AlertDialog.Builder builder) {
+        AlertDialog dialog = builder.create();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setFlags(
+                    android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                    android.view.WindowManager.LayoutParams.FLAG_SECURE);
+        }
+        dialog.show();
     }
 
     private void sendAccumulatedMovement() {
@@ -1760,15 +1757,6 @@ public class MainActivity extends AppCompatActivity implements
         }
     }
 
-    private void sendText(String text) {
-        if (out != null && protocol != null) {
-            try {
-                protocol.sendCommand("T", text);
-            } catch (Exception e) {
-                Log.e(TAG, "Error sending text", e);
-            }
-        }
-    }
 
     // HeartbeatManager.HeartbeatListener implementation
     @Override
@@ -1806,26 +1794,16 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     @Override
-    public void onAuthenticationRequired() {
-        mainHandler.post(() -> {
-            if (currentServer != null) {
-                showTokenInputDialog(currentServer);
-            }
-        });
-    }
-
-    @Override
-    public void onError(String message) {
-        mainHandler.post(() -> {
-            Toast.makeText(this, getString(R.string.msg_error, message), Toast.LENGTH_SHORT).show();
-        });
-    }
-
-    @Override
     protected void onResume() {
         super.onResume();
         // Re-apply scroll-bar preferences in case they changed in Settings.
         applyScrollbarSettings();
+        // Skip auto-reconnect when returning from an in-app screen (QR scanner /
+        // Settings); only reconnect when genuinely returning from the background.
+        if (suppressResumeReconnect) {
+            suppressResumeReconnect = false;
+            return;
+        }
         // Auto-reconnect to the last connected server when returning to the foreground
         // (e.g. after the app was minimized). connectToServer() shows a toast on failure.
         if (!isConnecting && reconnectTarget != null && (socket == null || socket.isClosed())) {
@@ -1842,6 +1820,7 @@ public class MainActivity extends AppCompatActivity implements
     // QR Code scanning methods
     private void startQRScanner() {
         Log.d(TAG, "Starting QR Scanner Activity");
+        suppressResumeReconnect = true; // returning here is in-app navigation, not a background return
         Intent intent = new Intent(this, QRScannerActivity.class);
         qrScannerLauncher.launch(intent);
     }
@@ -1863,12 +1842,19 @@ public class MainActivity extends AppCompatActivity implements
             String ip = json.getString("ip");
             int port = json.optInt("port", 5050);
             String token = json.optString("token", "");
+            String fingerprint = json.optString("fp", "");
 
             Log.d(TAG, "Parsed - Name: " + name + ", IP: " + ip + ", Port: " + port);
 
             if (ip.isEmpty()) {
                 Toast.makeText(this, R.string.msg_qr_missing_ip, Toast.LENGTH_SHORT).show();
                 return;
+            }
+
+            // Pin the server certificate fingerprint from the QR so the first
+            // connection is verified against it (no trust-on-first-use window).
+            if (!fingerprint.isEmpty()) {
+                TlsHelper.pinFingerprint(this, ip, port, fingerprint);
             }
 
             // Check if server already exists
