@@ -55,6 +55,11 @@ tracked separately as `ProtocolVersion` in `Backend-GO/protocol.go` (currently *
 - Dead code across the Go backend and Android app (unused functions, methods, imports,
   and string resources).
 
+### Release
+- Tagged `vX.Y.Z` builds now publish the Linux server binaries **and the Android APK**
+  (signed when keystore secrets are configured, otherwise a debug APK), with the
+  changelog section as the release notes.
+
 ### Security
 - See [SECURITY.md](SECURITY.md) for the trust model, hardening controls, and
   vulnerability-disclosure process. See [PRIVACY.md](PRIVACY.md) for data handling.

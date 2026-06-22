@@ -16,6 +16,21 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Release signing for CI: when ANDROCONTROL_KEYSTORE points to a keystore (set from
+    // GitHub secrets in release.yml) the release build is signed with it. Without it
+    // (local builds / Android Studio's own signing) this is a no-op.
+    val releaseKeystore = System.getenv("ANDROCONTROL_KEYSTORE")
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("ANDROCONTROL_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROCONTROL_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROCONTROL_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -24,6 +39,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (releaseKeystore != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     compileOptions {

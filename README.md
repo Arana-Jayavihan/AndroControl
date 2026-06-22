@@ -407,10 +407,27 @@ AndroControl/
 - **Wire protocol:** `ProtocolVersion` in `Backend-GO/protocol.go` (client and server
   negotiate compatibility on connect).
 - **Releases** are tagged `vX.Y.Z`; pushing a tag builds and publishes the Linux
-  server binaries (see `.github/workflows/release.yml`).
+  server binaries **and the Android APK**, using the matching `CHANGELOG.md` section as
+  the release notes (see `.github/workflows/release.yml`).
 
 Keep the app version and protocol version in step when changing the wire format.
 Notable changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+
+### Signing the release APK
+Without signing secrets the release attaches a **debug** APK (installable, but
+debuggable). For a proper signed release APK, add these repository secrets (Settings →
+Secrets and variables → Actions) from your existing keystore:
+
+| Secret | Value |
+| --- | --- |
+| `ANDROCONTROL_KEYSTORE_BASE64` | `base64 -w0 your.jks` |
+| `ANDROCONTROL_KEYSTORE_PASSWORD` | keystore password |
+| `ANDROCONTROL_KEY_ALIAS` | key alias |
+| `ANDROCONTROL_KEY_PASSWORD` | key password |
+
+With those set, the release job runs `assembleRelease` signed with your key. Local
+builds and Android Studio's own signing are unaffected (the Gradle config only signs
+when `ANDROCONTROL_KEYSTORE` is present in the environment).
 
 ## Privacy
 
