@@ -6,6 +6,8 @@ tracked separately as `ProtocolVersion` in `Backend-GO/protocol.go` (currently *
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-23
+
 ### Added
 - **Mutual TLS device authentication.** Each device generates an EC key pair and
   self-signed client certificate in the Android Keystore (non-exportable) and proves its

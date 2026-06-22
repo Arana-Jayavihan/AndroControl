@@ -29,7 +29,20 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o dist/AndroControl-linux-arm64 .
           (cd dist && sha256sum * > SHA256SUMS)
 
+      - name: Extract release notes from CHANGELOG
+        working-directory: ${{ github.workspace }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            $0 ~ "^## \\[" ver "\\]" { flag=1; next }
+            flag && /^## \[/ { exit }
+            flag { print }
+          ' CHANGELOG.md > release_notes.md
+          echo "----- release notes -----"; cat release_notes.md
+
       - name: Publish release artifacts
         uses: softprops/action-gh-release@v2
         with:
           files: Backend-GO/dist/*
+          body_path: release_notes.md
+          fail_on_unmatched_files: true

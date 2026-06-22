@@ -294,6 +294,44 @@ sudo systemctl enable --now androcontrol
 sudo journalctl -u androcontrol -f   # view the QR code / token / fingerprint
 ```
 
+```bash
+# 4. (optional) Desktop notifications on connect/disconnect — run as your DESKTOP user
+#    (must be able to read the service journal: group systemd-journal / wheel / adm)
+install -Dm755 Backend-GO/deploy/androcontrol-notify         ~/.local/bin/androcontrol-notify
+install -Dm644 Backend-GO/deploy/androcontrol-notify.service ~/.config/systemd/user/androcontrol-notify.service
+systemctl --user daemon-reload && systemctl --user enable --now androcontrol-notify
+```
+
+## Running as a service (NixOS)
+
+This repo is a flake with a NixOS module that creates the user, loads `uinput`, installs
+the udev rule + `androcontrol-ctl`, and runs the hardened service.
+
+```nix
+# flake.nix
+{
+  inputs.androcontrol.url = "github:Arana-Jayavihan/AndroControl";
+
+  # in your nixosConfigurations.<host>.modules:
+  #   inputs.androcontrol.nixosModules.default
+}
+```
+
+```nix
+# host configuration
+services.androcontrol = {
+  enable = true;
+  port = 5050;
+  openFirewall = true;            # or keep false and open the port elsewhere
+  # bindAddress = "127.0.0.1";    # loopback only (reach via VPN/SSH tunnel)
+  desktopNotifications = true;    # per-user notify-send popups on connect/disconnect
+};
+```
+
+Manage devices with `sudo androcontrol-ctl …` (it's on `PATH` automatically). The pairing
+QR / token / fingerprint appears in `journalctl -u androcontrol` on first start, or via
+`sudo androcontrol-ctl qr`.
+
 ## Building from Source
 
 ### Backend

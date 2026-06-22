@@ -11,7 +11,7 @@ android {
         minSdk = 23  // Requires Android 6.0+ for secure storage (AES-GCM via Android Keystore)
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
