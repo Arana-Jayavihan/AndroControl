@@ -403,6 +403,16 @@ func (dm *DeviceManager) List() []Device {
 	return out
 }
 
+// Name returns the display name of a device by ID, or "" if the ID is unknown.
+func (dm *DeviceManager) Name(id string) string {
+	dm.mu.RLock()
+	defer dm.mu.RUnlock()
+	if d, ok := dm.devices[id]; ok {
+		return d.Name
+	}
+	return ""
+}
+
 // IsActive reports whether a device exists and is not revoked.
 func (dm *DeviceManager) IsActive(id string) bool {
 	dm.mu.RLock()

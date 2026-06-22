@@ -59,7 +59,7 @@
 
             # Convenience CLI so admins don't have to hand-roll the
             # `runuser ... -data-dir ... && systemctl reload` dance.
-            # Usage:  sudo androcontrol-ctl {list | revoke <id|name> | revoke-all | cleanup}
+            # Usage:  sudo androcontrol-ctl {qr | regen-token | list | revoke <id|name> | revoke-all | cleanup}
             adminCli = pkgs.writeShellScriptBin "androcontrol-ctl" ''
               set -eu
 
@@ -81,6 +81,10 @@
               case "$cmd" in
                 qr|show-qr)
                   run -show-qr
+                  ;;
+                regen-token)
+                  run -regen-token
+                  reload
                   ;;
                 list|list-devices)
                   run -list-devices
@@ -113,7 +117,7 @@
                   reload
                   ;;
                 *)
-                  echo "usage: androcontrol-ctl {qr | list | revoke <id|name> | revoke-all | cleanup | rename <id> <name> | prune-inactive <days>}" >&2
+                  echo "usage: androcontrol-ctl {qr | regen-token | list | revoke <id|name> | revoke-all | cleanup | rename <id> <name> | prune-inactive <days>}" >&2
                   exit 1
                   ;;
               esac
@@ -154,6 +158,22 @@
                 type = lib.types.bool;
                 default = false;
                 description = "Whether to open the firewall port";
+              };
+
+              onEvent = lib.mkOption {
+                type = lib.types.str;
+                default = "";
+                example = ''notify-send "AndroControl" "$ANDROCONTROL_EVENT: $ANDROCONTROL_DEVICE_NAME"'';
+                description = ''
+                  Shell command run on each device connect/disconnect. Event details are
+                  provided in the environment: ANDROCONTROL_EVENT (connect|disconnect),
+                  ANDROCONTROL_DEVICE_ID, ANDROCONTROL_DEVICE_NAME, ANDROCONTROL_IP, and
+                  (on disconnect) ANDROCONTROL_DURATION in seconds. Empty disables it.
+
+                  The command runs inside the (sandboxed) service unit as the service
+                  user; delivering desktop notifications from here needs access to your
+                  graphical session's bus and may require relaxing the unit sandbox.
+                '';
               };
 
               user = lib.mkOption {
@@ -200,7 +220,8 @@
                   User = cfg.user;
                   Group = cfg.group;
                   WorkingDirectory = cfg.dataDir;
-                  ExecStart = "${cfg.package}/bin/AndroControl -addr ${cfg.bindAddress} -port ${toString cfg.port}";
+                  ExecStart = "${cfg.package}/bin/AndroControl -addr ${cfg.bindAddress} -port ${toString cfg.port}"
+                    + lib.optionalString (cfg.onEvent != "") " -on-event ${lib.escapeShellArg cfg.onEvent}";
                   # `systemctl reload androcontrol` re-reads devices.json so external
                   # revoke/cleanup changes apply without a full restart.
                   ExecReload = "${pkgs.coreutils}/bin/kill -HUP $MAINPID";

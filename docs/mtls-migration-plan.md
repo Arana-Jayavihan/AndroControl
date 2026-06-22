@@ -1,10 +1,23 @@
 # mTLS Migration Plan — Option A (pinned self-signed client certificates)
 
-> **Status:** Phases 1–4 implemented. Server side (`tls.go`, `devices.go`, `main.go`,
-> `protocol.go`) is complete and tested (`go test` incl. `-race`). Android side
-> (`ClientIdentity.java`, `TlsHelper`, `Protocol.establishSession`, `MainActivity`)
-> is code-complete and needs a Studio build + on-device test. Protocol bumped to 2.0.
-> Remaining follow-up: client-certificate **expiry/rotation** flow.
+> **Status:** Implemented and verified working end-to-end on-device. Server side
+> (`tls.go`, `devices.go`, `main.go`, `protocol.go`) is complete and tested (`go test`
+> incl. `-race`). Android side (`ClientIdentity.java`, `TlsHelper`,
+> `Protocol.establishSession`, `MainActivity`) builds and pairs/connects successfully.
+> Protocol bumped to 2.0. Remaining follow-up: client-certificate **expiry/rotation**
+> flow.
+>
+> **Conscrypt gotchas hit during bring-up** (see `ClientIdentity.java`):
+> 1. The client key manager must be an `X509ExtendedKeyManager` overriding both
+>    `chooseClientAlias` and `chooseEngineClientAlias`, or Conscrypt's SSLEngine path
+>    sends no certificate (server: `tls: client didn't provide a certificate`).
+> 2. The Keystore EC key must authorize `KeyProperties.DIGEST_NONE` — Conscrypt signs
+>    the CertificateVerify as raw `NONEwithECDSA`; without it the handshake dies right
+>    after the cert is presented (server: `EOF`).
+>
+> The server uses a generous `HandshakeTimeout` (separate from the app-auth timeout) so
+> an interactive trust-on-first-use confirmation can't be killed mid-handshake, and logs
+> handshake failures at WARN for diagnosability.
 
 ## Goal
 Replace the per-device **bearer token** with a per-device **client certificate** whose

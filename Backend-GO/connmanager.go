@@ -60,17 +60,13 @@ func (cm *ConnectionManager) TryAccept(addr net.Addr) error {
 
 	ip := extractIP(addr)
 
-	// Check total connections
 	if cm.currentTotal >= cm.maxTotal {
 		return ErrTooManyConnections
 	}
-
-	// Check per-IP limit
 	if cm.connections[ip] >= cm.maxPerIP {
 		return ErrTooManyFromIP
 	}
 
-	// Accept the connection
 	cm.connections[ip]++
 	cm.currentTotal++
 	return nil

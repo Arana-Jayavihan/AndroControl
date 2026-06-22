@@ -117,7 +117,6 @@
     <string name="msg_connected_to">Connected to %1$s</string>
     <string name="msg_connection_failed">Connection failed: %1$s</string>
     <string name="msg_heartbeat_lost">Connection lost (heartbeat timeout)</string>
-    <string name="msg_connection_restored">Connection restored</string>
     <string name="msg_connection_lost">Connection lost</string>
     <string name="msg_error">Error: %1$s</string>
     <string name="msg_qr_missing_ip">Invalid QR code: missing IP address</string>

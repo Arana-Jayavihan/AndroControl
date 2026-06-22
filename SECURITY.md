@@ -38,5 +38,6 @@ Linux machine. There is no cloud component and the developers receive no data.
 ## Important caveat
 Anyone who can reach the port **and** holds a valid credential gains full keyboard/mouse
 control of the host. Treat the enrollment token/QR as a secret, run on trusted networks
-(or bind to loopback + VPN/SSH tunnel), and rotate the enrollment token
-(`rm auth_token` + restart) if it leaks. See `PRIVACY.md` for data handling.
+(or bind to loopback + VPN/SSH tunnel), and rotate the enrollment token with
+`androcontrol-ctl regen-token` if it leaks (existing paired devices keep working; only
+new pairings need the new token). See `PRIVACY.md` for data handling.

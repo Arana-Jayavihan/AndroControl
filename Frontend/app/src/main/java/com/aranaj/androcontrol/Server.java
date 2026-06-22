@@ -75,8 +75,4 @@ public class Server {
             authToken = null;
         }
     }
-
-    public boolean hasAuthToken() {
-        return authToken != null && authToken.length > 0;
-    }
 }

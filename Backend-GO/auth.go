@@ -51,23 +51,18 @@ func (am *AuthManager) Initialize() error {
 	tokenPath := filepath.Join(ConfigDir, TokenFile)
 	metaPath := filepath.Join(ConfigDir, TokenMetaFile)
 
-	// Try to load existing token and metadata
 	if data, err := os.ReadFile(tokenPath); err == nil {
 		am.token = strings.TrimSpace(string(data))
 		if len(am.token) >= TokenLength*2 { // hex encoded
-			// Load metadata
 			if metaData, err := os.ReadFile(metaPath); err == nil {
 				if err := json.Unmarshal(metaData, &am.metadata); err != nil {
 					log.Printf("Warning: failed to parse token metadata: %v", err)
-					// Create metadata from file modification time
 					am.createMetadataFromFile(tokenPath)
 				}
 			} else {
-				// Create metadata from file modification time
 				am.createMetadataFromFile(tokenPath)
 			}
 
-			// Check if token is expired
 			if am.isTokenExpired() {
 				log.Println("Authentication token has expired, regenerating...")
 				return am.regenerateTokenLocked()
@@ -79,7 +74,6 @@ func (am *AuthManager) Initialize() error {
 		}
 	}
 
-	// Generate new token
 	return am.regenerateTokenLocked()
 }
 
@@ -170,6 +164,39 @@ func (am *AuthManager) GetToken() string {
 	am.mu.RLock()
 	defer am.mu.RUnlock()
 	return am.token
+}
+
+// Regenerate replaces the enrollment/pairing token with a fresh one and persists it.
+// Already-paired devices are unaffected (they authenticate by client certificate);
+// only future pairings need the new token. A running server picks up the change on
+// SIGHUP (see Reload).
+func (am *AuthManager) Regenerate() error {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	return am.regenerateTokenLocked()
+}
+
+// Reload re-reads the enrollment token (and its metadata) from disk, e.g. after an
+// out-of-band -regen-token. It does NOT generate a new token: if the file is missing
+// or malformed the current in-memory token is kept and an error is returned.
+func (am *AuthManager) Reload() error {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+
+	data, err := os.ReadFile(filepath.Join(ConfigDir, TokenFile))
+	if err != nil {
+		return err
+	}
+	token := strings.TrimSpace(string(data))
+	if len(token) < TokenLength*2 {
+		return fmt.Errorf("token file is too short to be valid")
+	}
+	am.token = token
+
+	if metaData, err := os.ReadFile(filepath.Join(ConfigDir, TokenMetaFile)); err == nil {
+		_ = json.Unmarshal(metaData, &am.metadata)
+	}
+	return nil
 }
 
 // PrintToken displays the enrollment/pairing token for the operator.

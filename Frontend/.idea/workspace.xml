@@ -27,32 +27,23 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="ed77e808-61b0-4947-ab3f-8af4efad977a" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/../Backend-GO/activeconns_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/activeconns_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../Backend-GO/devices.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/devices.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../Backend-GO/devices_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/devices_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../Backend-GO/handshake_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/handshake_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Backend-GO/auth.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/auth.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Backend-GO/connmanager.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/connmanager.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../Backend-GO/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/main.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../Backend-GO/protocol.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/protocol.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../Backend-GO/protocol_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/protocol_test.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../Backend-GO/qrcode.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/qrcode.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../Backend-GO/tls.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/tls.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Backend-GO/ratelimit.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/ratelimit.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../Backend-GO/validation.go" beforeDir="false" afterPath="$PROJECT_DIR$/../Backend-GO/validation.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.gradle/buildOutputCleanup/buildOutputCleanup.lock" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/buildOutputCleanup/buildOutputCleanup.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gradle/buildOutputCleanup/outputFiles.bin" beforeDir="false" afterPath="$PROJECT_DIR$/.gradle/buildOutputCleanup/outputFiles.bin" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/proguard-rules.pro" beforeDir="false" afterPath="$PROJECT_DIR$/app/proguard-rules.pro" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/release/app-release.apk" beforeDir="false" afterPath="$PROJECT_DIR$/app/release/app-release.apk" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/release/output-metadata.json" beforeDir="false" afterPath="$PROJECT_DIR$/app/release/output-metadata.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/AndroidManifest.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/ClientIdentity.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/ClientIdentity.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/HeartbeatManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/HeartbeatManager.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/MainActivity.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/MainActivity.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/Protocol.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/Protocol.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/SecureStorage.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/SecureStorage.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/Server.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/Server.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/TlsHelper.java" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/java/com/aranaj/androcontrol/TlsHelper.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/app/src/main/res/layout/activity_main.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/layout/activity_main.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/src/main/res/values/strings.xml" beforeDir="false" afterPath="$PROJECT_DIR$/app/src/main/res/values/strings.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../PRIVACY.md" beforeDir="false" afterPath="$PROJECT_DIR$/../PRIVACY.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../README.md" beforeDir="false" afterPath="$PROJECT_DIR$/../README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../SECURITY.md" beforeDir="false" afterPath="$PROJECT_DIR$/../SECURITY.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../flake.nix" beforeDir="false" afterPath="$PROJECT_DIR$/../flake.nix" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -105,7 +96,7 @@
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
     &quot;AnalyzeApkAction.lastApkPath&quot;: &quot;/home/lucifer/Projects/AndroControl/Frontend/app/build/outputs/apk/debug/app-debug.apk&quot;,
-    &quot;Android App.AndroControl.app.executor&quot;: &quot;Run&quot;,
+    &quot;Android App.AndroControl.app.executor&quot;: &quot;Debug&quot;,
     &quot;ApkExportedModule&quot;: &quot;AndroControl.app&quot;,
     &quot;ExportApk.ApkPathForAndroControl.app&quot;: &quot;/home/lucifer/Projects/AndroControl/Frontend/app&quot;,
     &quot;Gradle.Frontend:app.executor&quot;: &quot;Run&quot;,

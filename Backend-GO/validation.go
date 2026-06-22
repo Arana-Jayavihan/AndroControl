@@ -77,23 +77,18 @@ func SanitizeTextStrict(text string) (string, error) {
 	if len(text) > MaxTextLength {
 		return "", ErrTextTooLong
 	}
-
-	// Check for null bytes
 	if strings.ContainsRune(text, '\x00') {
 		return "", ErrNullByte
 	}
-
-	// Check for dangerous terminal escape sequences
 	if containsDangerousEscapes(text) {
 		return "", ErrDangerousSequence
 	}
 
-	// Remove control characters except newline and tab
+	// Keep printable characters, newline and tab; drop other control characters.
 	var sanitized strings.Builder
 	sanitized.Grow(len(text))
 
 	for _, r := range text {
-		// Allow printable characters, newline, and tab
 		if r == '\n' || r == '\t' || (r >= 0x20 && r < 0x7F) || (r > 0x7F && unicode.IsPrint(r)) {
 			sanitized.WriteRune(r)
 		}
@@ -104,15 +99,9 @@ func SanitizeTextStrict(text string) (string, error) {
 
 // containsDangerousEscapes checks for terminal escape sequences that could be exploited
 func containsDangerousEscapes(text string) bool {
-	// Check for ANSI escape sequences
-	if strings.Contains(text, "\x1b[") || strings.Contains(text, "\x1b]") {
-		return true
-	}
-	// Check for other escape patterns
 	if strings.Contains(text, "\x1b") {
 		return true
 	}
-	// Check for terminal control sequences
 	if strings.ContainsAny(text, "\x07\x08\x0B\x0C\x0E\x0F") {
 		return true
 	}
@@ -137,27 +126,20 @@ func ValidateKeyCombo(combo string) error {
 	if len(combo) == 0 || len(combo) > 50 {
 		return ErrInvalidCombo
 	}
-
-	// Check for null bytes
 	if strings.ContainsRune(combo, '\x00') {
 		return ErrNullByte
 	}
 
-	// Convert to uppercase for validation
 	upper := strings.ToUpper(combo)
-
-	// Must match the pattern
 	if !keyComboPattern.MatchString(upper) {
 		return ErrInvalidCombo
 	}
 
-	// Check that we don't have too many keys
 	parts := strings.Split(upper, "+")
 	if len(parts) > MaxComboKeys {
 		return ErrInvalidCombo
 	}
 
-	// Validate each key name
 	validModifiers := map[string]bool{
 		"CTRL": true, "LCTRL": true, "RCTRL": true,
 		"ALT": true, "LALT": true, "RALT": true,

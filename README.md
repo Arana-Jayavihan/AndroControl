@@ -2,19 +2,39 @@
 
 AndroControl is a secure remote control application that allows you to control your Linux system's mouse and keyboard from your Android smartphone.
 
+<p align="center">
+  <img src="Assets/Screenshot_20260620-213220.png" width="240" alt="AndroControl touchpad screen">
+</p>
+
 ## Features
 
 - **Mouse Control**: Move cursor, left/right/middle click, double-click, drag, and scroll
 - **Keyboard Control**: Full QWERTY keyboard with modifier keys (Ctrl, Alt, Shift, Super/Win)
 - **Special Keys**: Function keys (F1-F12), navigation keys, Tab, Escape, etc.
 - **Key Combos**: Support for keyboard shortcuts like Ctrl+C, Alt+Tab, etc.
-- **TLS Encryption**: All communication is encrypted using TLS 1.2/1.3
-- **TOFU Security**: Trust-On-First-Use certificate pinning with user confirmation
-- **Token Authentication**: Secure token-based authentication
-- **QR Code Setup**: Scan QR code from server for easy connection setup
+- **Mutual TLS**: All communication is encrypted with TLS 1.2/1.3, and each device authenticates with its own client certificate (no shared or copyable token)
+- **Certificate Pinning**: QR-paired servers are pinned from the QR's fingerprint (no trust-on-first-use window); manual setup falls back to fail-closed TOFU
+- **Pairing & Revocation**: A one-time enrollment token pairs a new device; devices can be revoked individually from the server
+- **Single-session control**: Only one device controls the host at a time; other devices are refused without disturbing the active session
+- **QR Code Setup**: Scan a QR code from the server for easy connection setup
 - **Multiple Servers**: Save and manage multiple server configurations
-- **Haptic Feedback**: Vibration feedback for button presses
+- **Haptic Feedback**: Configurable vibration feedback for button presses
 - **Heartbeat**: Connection health monitoring with automatic reconnection
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="Assets/Screenshot_20260620-213220.png" width="200" alt="Touchpad and controls"><br><sub>Touchpad &amp; controls</sub></td>
+    <td align="center"><img src="Assets/Screenshot_20260620-213231.png" width="200" alt="On-screen keyboard"><br><sub>On-screen keyboard</sub></td>
+    <td align="center"><img src="Assets/Screenshot_20260620-213244.png" width="200" alt="System keyboard"><br><sub>System keyboard (Type)</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="Assets/Screenshot_20260620-213334.png" width="200" alt="Server management drawer"><br><sub>Server management</sub></td>
+    <td align="center"><img src="Assets/Screenshot_20260623-015326.png" width="200" alt="Settings: this device and appearance"><br><sub>Settings &middot; device &amp; theme</sub></td>
+    <td align="center"><img src="Assets/Screenshot_20260620-213344.png" width="200" alt="Settings: scroll bar and haptics"><br><sub>Settings &middot; scroll bar &amp; haptics</sub></td>
+  </tr>
+</table>
 
 ## Architecture
 
@@ -102,6 +122,7 @@ service for you:
 
 ```bash
 sudo androcontrol-ctl qr                     # reprint the pairing QR (to add a new device)
+sudo androcontrol-ctl regen-token            # rotate the enrollment token + reprint the QR
 sudo androcontrol-ctl list                   # list devices (id, name, status, last seen, IP)
 sudo androcontrol-ctl revoke <id-or-name>    # revoke one device (by ID or name)
 sudo androcontrol-ctl revoke-all             # revoke every device
@@ -126,10 +147,12 @@ directly (e.g. when running the server by hand):
 ./AndroControl -data-dir /var/lib/androcontrol -revoke <id-or-name>
 ./AndroControl -data-dir /var/lib/androcontrol -revoke-all
 ./AndroControl -data-dir /var/lib/androcontrol -cleanup
+./AndroControl -data-dir /var/lib/androcontrol -regen-token
 ```
 
-Device records are stored in `devices.json` (token hashes only — never plaintext).
-Revoked devices are also **pruned automatically once a day** while the server runs.
+Device records are stored in `devices.json` (certificate fingerprints only — no private
+keys or secrets). Revoked devices are also **pruned automatically once a day** while the
+server runs.
 
 > Why a helper? Admin commands edit `devices.json` on disk while the running
 > server holds the registry in memory. `androcontrol-ctl` reloads the service
@@ -137,6 +160,29 @@ Revoked devices are also **pruned automatically once a day** while the server ru
 > server **immediately drops any live connection** belonging to a revoked
 > device. Doing it by hand is equivalent to: run the flag as the service user,
 > then `sudo systemctl reload androcontrol`.
+
+### Connect/disconnect notifications
+Run a command whenever a device connects or disconnects by passing `-on-event` to the
+server (or setting `services.androcontrol.onEvent` in the NixOS module). Event details
+are passed in environment variables — never interpolated into the command — so a device
+name can't inject shell:
+
+| Variable | Value |
+| --- | --- |
+| `ANDROCONTROL_EVENT` | `connect` or `disconnect` |
+| `ANDROCONTROL_DEVICE_ID` | the paired device's id |
+| `ANDROCONTROL_DEVICE_NAME` | the device's display name |
+| `ANDROCONTROL_IP` | the client IP address |
+| `ANDROCONTROL_DURATION` | session length in seconds (disconnect only) |
+
+```bash
+./AndroControl -on-event 'notify-send "AndroControl" "$ANDROCONTROL_EVENT: $ANDROCONTROL_DEVICE_NAME ($ANDROCONTROL_IP)"'
+```
+
+The command runs asynchronously with a 10-second timeout; failures are logged and never
+affect the session. Note: delivering **desktop** notifications from a sandboxed system
+service needs access to your graphical session bus (`DISPLAY`/`DBUS_SESSION_BUS_ADDRESS`),
+which may require relaxing the unit sandbox or targeting the user bus.
 
 ## Usage
 
@@ -201,7 +247,8 @@ that could be copied or replayed.
   private key never leaves the device), plus last-seen time/IP for auditing.
 
 Anyone with the enrollment token can pair a new device, so treat the QR code / token
-as a secret and rotate it (delete `auth_token` and restart) if it leaks.
+as a secret and rotate it with `androcontrol-ctl regen-token` (a running service picks
+up the new token automatically; existing paired devices keep working) if it leaks.
 
 ### Connection lifecycle
 The authenticated TLS connection is the trust boundary. Idle connections are closed
@@ -214,6 +261,9 @@ connected, a connection attempt from a **different** device is rejected (`AUTH:B
 without disturbing the active session. The **same** device reconnecting (e.g. after a
 network drop or app restart) reclaims its own slot, displacing the stale connection.
 
+For the full trust model, hardening controls and the vulnerability-disclosure process,
+see [SECURITY.md](SECURITY.md).
+
 ## Network Configuration
 
 - Default port: **5050**
@@ -221,7 +271,8 @@ network drop or app restart) reclaims its own slot, displacing the stale connect
 - Both devices must be on the same network (or have appropriate routing)
 - Firewall must allow TCP traffic on the configured port
 
-> **Security note:** anyone who can reach the port and holds a valid token gets full
+> **Security note:** anyone who can reach the port and holds a valid credential (a
+> paired client certificate, or the enrollment token to pair one) gets full
 > keyboard/mouse control of the machine. Run AndroControl only on trusted networks,
 > bind to `127.0.0.1` and use a VPN/SSH tunnel for remote access, or restrict the port
 > with a firewall. Avoid exposing it directly to the internet.
@@ -328,6 +379,7 @@ AndroControl/
   server binaries (see `.github/workflows/release.yml`).
 
 Keep the app version and protocol version in step when changing the wire format.
+Notable changes are recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ## Privacy
 

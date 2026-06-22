@@ -46,6 +46,17 @@ func TestDeviceCertStored(t *testing.T) {
 	}
 }
 
+func TestDeviceName(t *testing.T) {
+	dm := newTestDeviceManager(t)
+	id, _ := dm.RegisterCert("c", "fp", "Pixel 8", "1.2.3.4")
+	if got := dm.Name(id); got != "Pixel 8" {
+		t.Errorf("Name(%s) = %q, want %q", id, got, "Pixel 8")
+	}
+	if got := dm.Name("does-not-exist"); got != "" {
+		t.Errorf("Name(unknown) = %q, want empty string", got)
+	}
+}
+
 func TestDeviceRevoke(t *testing.T) {
 	dm := newTestDeviceManager(t)
 	id, _ := dm.RegisterCert("c", "fp", "Phone", "1.2.3.4")

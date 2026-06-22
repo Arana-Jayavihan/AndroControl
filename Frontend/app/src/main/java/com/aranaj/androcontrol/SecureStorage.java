@@ -174,21 +174,6 @@ public class SecureStorage {
     }
 
     /**
-     * Checks if a token exists for a server.
-     */
-    public boolean hasToken(String serverId) {
-        return prefs.contains("token_" + serverId);
-    }
-
-    /**
-     * Clears all stored tokens.
-     */
-    public void clearAll() {
-        prefs.edit().clear().apply();
-        Log.d(TAG, "Cleared all stored tokens");
-    }
-
-    /**
      * Retrieves an authentication token as a char[] for secure memory handling.
      * The caller is responsible for clearing the array after use with clearCharArray().
      */

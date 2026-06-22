@@ -82,7 +82,6 @@ func GenerateQRCodeASCII(data string) (string, error) {
 		return "", fmt.Errorf("failed to generate QR code: %w", err)
 	}
 
-	// Get the bitmap
 	bitmap := qr.Bitmap()
 	size := len(bitmap)
 

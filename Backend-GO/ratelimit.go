@@ -155,11 +155,7 @@ func (crl *ClientRateLimiters) StartCleanup(interval, maxAge time.Duration, stop
 		for {
 			select {
 			case <-ticker.C:
-				removed := crl.Cleanup(maxAge)
-				if removed > 0 {
-					// Optional: log cleanup activity
-					// log.Printf("Rate limiter cleanup: removed %d stale limiters", removed)
-				}
+				crl.Cleanup(maxAge)
 			case <-stopCh:
 				return
 			}

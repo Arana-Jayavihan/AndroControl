@@ -18,7 +18,6 @@ import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.inputmethod.InputMethodManager;
-import android.view.inputmethod.EditorInfo;
 
 import androidx.activity.EdgeToEdge;
 import androidx.activity.result.ActivityResultLauncher;
@@ -1446,52 +1445,6 @@ public class MainActivity extends AppCompatActivity implements
         });
     }
 
-    /**
-     * Cancels any in-progress connection attempt.
-     * NOTE: This must be safe to call from the main thread.
-     * Network operations (socket.close) happen in the executor when it detects cancellation.
-     */
-    private void cancelCurrentConnection() {
-        // Signal the certificate latch BEFORE dismissing the dialog
-        // This unblocks the TLS handshake thread so it can clean up
-        if (pendingCertificateReject != null) {
-            Log.d(TAG, "Signaling pending certificate reject");
-            try {
-                new Thread(pendingCertificateReject).start();
-            } catch (Exception e) {
-                Log.e(TAG, "Error signaling certificate reject", e);
-            }
-            pendingCertificateReject = null;
-        }
-
-        // Dismiss any certificate dialog
-        if (currentCertificateDialog != null) {
-            try {
-                if (currentCertificateDialog.isShowing()) {
-                    currentCertificateDialog.dismiss();
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Error dismissing certificate dialog", e);
-            }
-            currentCertificateDialog = null;
-        }
-
-        // NOTE: Don't close socket here - it's network I/O and would crash on main thread.
-        // The executor will detect currentServer != server and close it there.
-
-        // Reset protocol state (no network I/O, just clears state)
-        if (protocol != null) {
-            protocol.reset();
-        }
-        if (heartbeatManager != null) {
-            heartbeatManager.stop();
-        }
-
-        out = null;
-        in = null;
-        isConnecting = false;
-    }
-
     private String getConnectionErrorMessage(Exception e) {
         if (e instanceof javax.net.ssl.SSLException) {
             if (e.getMessage() != null && e.getMessage().contains("fingerprint mismatch")) {
@@ -1770,13 +1723,6 @@ public class MainActivity extends AppCompatActivity implements
             Toast.makeText(this, R.string.msg_heartbeat_lost, Toast.LENGTH_LONG).show();
         });
         disconnectFromServer();
-    }
-
-    @Override
-    public void onHeartbeatRestored() {
-        mainHandler.post(() -> {
-            Toast.makeText(this, R.string.msg_connection_restored, Toast.LENGTH_SHORT).show();
-        });
     }
 
     // Protocol.ProtocolListener implementation
