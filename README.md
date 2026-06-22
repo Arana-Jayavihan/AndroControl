@@ -176,13 +176,17 @@ name can't inject shell:
 | `ANDROCONTROL_DURATION` | session length in seconds (disconnect only) |
 
 ```bash
-./AndroControl -on-event 'notify-send "AndroControl" "$ANDROCONTROL_EVENT: $ANDROCONTROL_DEVICE_NAME ($ANDROCONTROL_IP)"'
+# Headless push that works anywhere (ntfy):
+./AndroControl -on-event 'curl -fsS -d "$ANDROCONTROL_EVENT: $ANDROCONTROL_DEVICE_NAME" https://ntfy.sh/your-topic'
 ```
 
 The command runs asynchronously with a 10-second timeout; failures are logged and never
-affect the session. Note: delivering **desktop** notifications from a sandboxed system
-service needs access to your graphical session bus (`DISPLAY`/`DBUS_SESSION_BUS_ADDRESS`),
-which may require relaxing the unit sandbox or targeting the user bus.
+affect the session. Copy-paste recipes for ntfy, webhooks, email, syslog, and desktop
+popups are in [`Backend-GO/deploy/notify-examples`](Backend-GO/deploy/notify-examples).
+
+> **Desktop popups** (`notify-send`) only work if the server can reach a graphical
+> session bus. A hardened system service (dedicated user + sandbox) generally cannot, so
+> prefer a headless channel (ntfy/webhook), or run the server inside your own session.
 
 ## Usage
 
@@ -333,7 +337,7 @@ AndroControl/
 │   ├── ratelimit.go     # Rate limiting
 │   ├── qrcode.go        # QR code generation
 │   ├── connmanager.go   # Connection management
-│   └── deploy/          # systemd unit, udev rule, androcontrol-ctl
+│   └── deploy/          # systemd unit, udev rule, androcontrol-ctl, notify-examples
 ├── Frontend/             # Android app
 │   └── app/src/main/java/com/aranaj/androcontrol/
 │       ├── MainActivity.java      # Main UI and controls

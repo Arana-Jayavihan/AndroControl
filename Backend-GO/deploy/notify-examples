@@ -1,0 +1,57 @@
+# AndroControl — connect/disconnect notification recipes
+#
+# The server runs ONE command (the -on-event hook) whenever a device connects or
+# disconnects. Event details arrive as environment variables — never interpolated
+# into the command, so a client-chosen device name can't inject shell:
+#
+#   ANDROCONTROL_EVENT        connect | disconnect
+#   ANDROCONTROL_DEVICE_ID    paired device id
+#   ANDROCONTROL_DEVICE_NAME  device display name
+#   ANDROCONTROL_IP           client IP address
+#   ANDROCONTROL_DURATION     session length in seconds (disconnect only)
+#
+# Pick ONE recipe below and pass it via -on-event. Three ways to set it:
+#
+#   1. Running by hand:
+#        ./AndroControl -on-event '<recipe>'
+#
+#   2. systemd unit (append to ExecStart in androcontrol.service):
+#        ExecStart=/usr/local/bin/AndroControl -addr 0.0.0.0 -port 5050 -on-event '<recipe>'
+#
+#   3. NixOS module:
+#        services.androcontrol.onEvent = "<recipe>";
+#
+# The hook runs as the service user, inside the unit's sandbox, asynchronously, with
+# a 10s timeout. Whatever binary it calls (curl, mail, logger, notify-send, ...) must
+# be on the service PATH.
+
+
+# ── ntfy — headless push to your phone/desktop, works anywhere (recommended) ────
+curl -fsS -H "Title: AndroControl" \
+  -d "$ANDROCONTROL_EVENT: $ANDROCONTROL_DEVICE_NAME ($ANDROCONTROL_IP)" \
+  https://ntfy.sh/REPLACE-WITH-YOUR-TOPIC
+
+
+# ── Generic webhook — JSON POST (your own endpoint, Slack/Discord, ...) ─────────
+curl -fsS -X POST -H 'Content-Type: application/json' \
+  -d "{\"event\":\"$ANDROCONTROL_EVENT\",\"device\":\"$ANDROCONTROL_DEVICE_NAME\",\"ip\":\"$ANDROCONTROL_IP\"}" \
+  https://example.com/androcontrol-hook
+
+
+# ── Email ───────────────────────────────────────────────────────────────────────
+printf 'AndroControl %s: %s (%s)\n' \
+  "$ANDROCONTROL_EVENT" "$ANDROCONTROL_DEVICE_NAME" "$ANDROCONTROL_IP" \
+  | mail -s "AndroControl $ANDROCONTROL_EVENT" you@example.com
+
+
+# ── System log — reuse your existing journald/syslog alerting ───────────────────
+logger -t androcontrol \
+  "$ANDROCONTROL_EVENT device=$ANDROCONTROL_DEVICE_NAME ip=$ANDROCONTROL_IP"
+
+
+# ── Desktop popup (libnotify) ───────────────────────────────────────────────────
+# NOTE: only works if the server process can reach a graphical session bus. A
+# hardened system service (dedicated user, sandboxed) generally CANNOT — run the
+# server in your own desktop session, or use ntfy/webhook above instead.
+notify-send "AndroControl" \
+  "$ANDROCONTROL_EVENT: $ANDROCONTROL_DEVICE_NAME ($ANDROCONTROL_IP)"
