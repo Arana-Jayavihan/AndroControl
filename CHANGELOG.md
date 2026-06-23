@@ -6,6 +6,15 @@ tracked separately as `ProtocolVersion` in `Backend-GO/protocol.go` (currently *
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-06-23
+
+### Fixed
+- High pointer update rates could pause and then disconnect the session. The per-IP rate
+  limit (100/s) throttled fast pointer movement, and because heartbeat `PING`s shared
+  that limit, a sustained drag starved the keep-alive until the client's heartbeat timed
+  out. `PING`/`VERSION` are now exempt from rate limiting, and the input rate limit was
+  raised (300/s, burst 400) to cover the update-rate slider's full range.
+
 ## [1.0.3] - 2026-06-23
 
 ### Added

@@ -507,9 +507,14 @@ func claimSession(conn net.Conn, deviceID string) bool {
 // clientIP is used as the rate-limit key so the limit is per source IP rather
 // than per connection (a new source port must not reset the bucket).
 func handleCommand(msg *Message, clientIP string) *Response {
-	limiter := rateLimiters.GetLimiter(clientIP)
-	if !limiter.Allow() {
-		return NewNACKResponse(msg.SeqID, ErrCodeRateLimit)
+	// PING and VERSION keep the connection alive and negotiate the protocol; they must
+	// never be rate-limited, or a burst of input could drain the bucket and starve the
+	// heartbeat — no PONG means the client's heartbeat times out and drops the session.
+	if msg.Command != "PING" && msg.Command != "VERSION" {
+		limiter := rateLimiters.GetLimiter(clientIP)
+		if !limiter.Allow() {
+			return NewNACKResponse(msg.SeqID, ErrCodeRateLimit)
+		}
 	}
 
 	if err := ValidatePayload(msg.Payload); err != nil {

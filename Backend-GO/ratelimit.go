@@ -6,8 +6,11 @@ import (
 )
 
 const (
-	DefaultTokensPerSecond = 100.0
-	DefaultBurstSize       = 150.0
+	// Sized above the client's maximum pointer update rate (the app's update-rate
+	// slider tops out at ~250 Hz) plus headroom for occasional clicks/scrolls, so
+	// legitimate input is never throttled while still bounding abuse.
+	DefaultTokensPerSecond = 300.0
+	DefaultBurstSize       = 400.0
 )
 
 // RateLimiter implements a token bucket rate limiter
