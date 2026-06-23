@@ -6,6 +6,27 @@ tracked separately as `ProtocolVersion` in `Backend-GO/protocol.go` (currently *
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-06-23
+
+### Changed
+- **Conflating sender.** Outbound commands are now drained by a dedicated sender thread,
+  and consecutive pointer moves are merged (deltas summed) while queued. A burst of input
+  can no longer grow an unbounded backlog or monopolise the writer lock, so input latency
+  stays bounded and a higher update rate never feels laggier.
+- The client socket send buffer is capped so back-pressure surfaces in the app's
+  (conflating) queue instead of the kernel hoarding seconds of move packets a slow link
+  can't drain — which had shown up as growing lag.
+- The pointer update-rate setting is now discrete and **capped at 125 Hz**
+  (60 / 80 / 100 / 125 Hz) instead of a continuous slider up to 250 Hz; rates beyond
+  ~125 Hz are pointless over Wi-Fi and only risk congestion.
+
+### Fixed
+- A congested-but-alive link no longer drops the session. The heartbeat now counts a
+  successful send or receive as liveness, so it only times out on a genuine connectivity
+  gap rather than transient Wi-Fi congestion.
+- The server now releases any mouse button or key left held when a connection drops
+  mid-press (a drag or held modifier), so the next session never inherits a stuck input.
+
 ## [1.0.4] - 2026-06-23
 
 ### Fixed

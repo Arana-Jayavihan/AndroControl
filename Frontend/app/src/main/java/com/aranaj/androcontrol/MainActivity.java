@@ -1304,6 +1304,14 @@ public class MainActivity extends AppCompatActivity implements
                 // Disable Nagle: input events are tiny and frequent, so send them
                 // immediately rather than letting the stack coalesce small writes.
                 socket.setTcpNoDelay(true);
+                // Cap the send buffer so back-pressure surfaces in the app's (conflating)
+                // send queue instead of the kernel hoarding seconds of move packets the
+                // link can't drain — which shows up as growing lag and a starved heartbeat.
+                try {
+                    socket.setSendBufferSize(8 * 1024);
+                } catch (Exception e) {
+                    Log.w(TAG, "Could not set send buffer size", e);
+                }
                 socket.startHandshake();
 
                 // Check again if cancelled during handshake

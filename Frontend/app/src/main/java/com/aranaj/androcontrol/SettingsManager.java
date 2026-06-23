@@ -42,12 +42,11 @@ public class SettingsManager {
     // duplicate server-side device records). App-global; never tied to a server.
     private static final String KEY_CLIENT_DEVICE_ID = "client_device_id";
 
-    // Pointer movement buffer (ms): how long moves are coalesced before sending.
-    // Lower = higher update rate / lower latency. Surfaced to the user as Hz.
-    private static final String KEY_MOVEMENT_BUFFER = "movement_buffer_ms";
-    public static final int MOVEMENT_BUFFER_MS_MIN = 4;
-    public static final int MOVEMENT_BUFFER_MS_MAX = 16;
-    public static final int MOVEMENT_BUFFER_MS_DEFAULT = 16;
+    // Pointer update rate (Hz): how often pointer moves are sent. Discrete options,
+    // capped at 125 Hz — higher is pointless over Wi-Fi and only risks congestion.
+    private static final String KEY_MOVEMENT_RATE = "movement_rate_hz";
+    public static final int[] MOVEMENT_RATE_HZ = {60, 80, 100, 125};
+    public static final int MOVEMENT_RATE_DEFAULT = 60;
 
     // Haptic feedback intensity (0 = off .. 100 = strongest)
     private static final String KEY_HAPTIC_INTENSITY = "haptic_intensity";
@@ -177,17 +176,24 @@ public class SettingsManager {
 
     // ---------------- Pointer update rate ----------------
 
-    /**
-     * @return the pointer movement buffer in milliseconds, clamped to
-     * {@link #MOVEMENT_BUFFER_MS_MIN}..{@link #MOVEMENT_BUFFER_MS_MAX}. Lower values
-     * mean a higher update rate (shown to the user as Hz) and lower latency.
-     */
-    public int getMovementBufferMs() {
-        int v = prefs.getInt(KEY_MOVEMENT_BUFFER, MOVEMENT_BUFFER_MS_DEFAULT);
-        return Math.max(MOVEMENT_BUFFER_MS_MIN, Math.min(MOVEMENT_BUFFER_MS_MAX, v));
+    /** @return the selected pointer update rate in Hz (one of {@link #MOVEMENT_RATE_HZ}). */
+    public int getMovementRateHz() {
+        int hz = prefs.getInt(KEY_MOVEMENT_RATE, MOVEMENT_RATE_DEFAULT);
+        for (int option : MOVEMENT_RATE_HZ) {
+            if (option == hz) return hz;
+        }
+        return MOVEMENT_RATE_DEFAULT;
     }
 
-    public void setMovementBufferMs(int ms) {
-        prefs.edit().putInt(KEY_MOVEMENT_BUFFER, ms).apply();
+    public void setMovementRateHz(int hz) {
+        prefs.edit().putInt(KEY_MOVEMENT_RATE, hz).apply();
+    }
+
+    /**
+     * @return the move-coalescing window in milliseconds (the period of the selected
+     * update rate). Used by the touch handler's send gate.
+     */
+    public int getMovementBufferMs() {
+        return Math.round(1000f / getMovementRateHz());
     }
 }

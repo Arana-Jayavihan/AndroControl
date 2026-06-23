@@ -25,6 +25,11 @@ public class HeartbeatManager {
     private final AtomicBoolean running;
     private final AtomicBoolean waitingForPong;
     private final AtomicLong lastPongTime;
+    // Last time we successfully sent or received anything. With a small send buffer a
+    // returning flush() means TCP is still ACKing (the peer is alive), so recent
+    // activity counts as liveness — a congested-but-alive link drops samples, not the
+    // connection.
+    private final AtomicLong lastActivityTime;
 
     private PrintWriter writer;
     private HeartbeatListener listener;
@@ -40,6 +45,15 @@ public class HeartbeatManager {
         this.running = new AtomicBoolean(false);
         this.waitingForPong = new AtomicBoolean(false);
         this.lastPongTime = new AtomicLong(System.currentTimeMillis());
+        this.lastActivityTime = new AtomicLong(System.currentTimeMillis());
+    }
+
+    /**
+     * Records successful connection activity (a flushed send or a received line).
+     * Counts as liveness alongside PONGs, so a slow link doesn't trip the timeout.
+     */
+    public void onActivity() {
+        lastActivityTime.set(System.currentTimeMillis());
     }
 
     /**
@@ -87,10 +101,13 @@ public class HeartbeatManager {
 
                     // Check if we received a PONG
                     if (waitingForPong.get()) {
-                        // Still waiting - connection might be dead
-                        long timeSinceLastPong = System.currentTimeMillis() - lastPongTime.get();
-                        if (timeSinceLastPong > HEARTBEAT_INTERVAL_MS + PONG_TIMEOUT_MS) {
-                            Log.w(TAG, "Heartbeat timeout - no PONG received");
+                        // No PONG yet — but recent successful traffic also proves the
+                        // link is alive (just congested), so only time out when nothing
+                        // at all has flowed for the window.
+                        long lastAlive = Math.max(lastPongTime.get(), lastActivityTime.get());
+                        long timeSinceAlive = System.currentTimeMillis() - lastAlive;
+                        if (timeSinceAlive > HEARTBEAT_INTERVAL_MS + PONG_TIMEOUT_MS) {
+                            Log.w(TAG, "Heartbeat timeout - no activity received");
                             notifyTimeout();
                         }
                     }

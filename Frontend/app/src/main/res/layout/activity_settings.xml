@@ -490,17 +490,17 @@
                             android:textColor="@color/text_secondary"
                             android:textSize="14sp"
                             tools:ignore="HardcodedText"
-                            android:text="63 Hz"/>
+                            android:text="60 Hz"/>
                     </LinearLayout>
 
                     <com.google.android.material.slider.Slider
                         android:id="@+id/bufferSlider"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:valueFrom="4"
-                        android:valueTo="16"
+                        android:valueFrom="0"
+                        android:valueTo="3"
                         android:stepSize="1"
-                        android:value="4"/>
+                        android:value="0"/>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>

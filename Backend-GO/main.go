@@ -46,6 +46,12 @@ var (
 	keyboardMu sync.Mutex
 	mouseMu    sync.Mutex
 
+	// Buttons/keys currently held down (guarded by mouseMu / keyboardMu), so a drag or
+	// modifier still pressed when a session ends can be released — the next session
+	// must not inherit a stuck button or key.
+	heldButtons = make(map[string]bool)
+	heldKeys    = make(map[int]bool)
+
 	// Global managers
 	connManager   *ConnectionManager
 	authManager   *AuthManager
@@ -199,6 +205,7 @@ func safeMouseButtonDown(button string) {
 	case "middle":
 		mouse.MiddlePress()
 	}
+	heldButtons[button] = true
 }
 
 func safeMouseButtonUp(button string) {
@@ -212,6 +219,7 @@ func safeMouseButtonUp(button string) {
 	case "middle":
 		mouse.MiddleRelease()
 	}
+	delete(heldButtons, button)
 }
 
 func safeDoubleClick(button string) {
@@ -364,12 +372,40 @@ func safeKeyDown(key int) {
 	keyboardMu.Lock()
 	defer keyboardMu.Unlock()
 	keyboard.KeyDown(key)
+	heldKeys[key] = true
 }
 
 func safeKeyUp(key int) {
 	keyboardMu.Lock()
 	defer keyboardMu.Unlock()
 	keyboard.KeyUp(key)
+	delete(heldKeys, key)
+}
+
+// releaseHeldInputs releases any mouse buttons or keys still held down — e.g. a drag or
+// modifier that was pressed when the connection dropped — so the next session doesn't
+// inherit a stuck button or key.
+func releaseHeldInputs() {
+	mouseMu.Lock()
+	for button := range heldButtons {
+		switch button {
+		case "left":
+			mouse.LeftRelease()
+		case "right":
+			mouse.RightRelease()
+		case "middle":
+			mouse.MiddleRelease()
+		}
+		delete(heldButtons, button)
+	}
+	mouseMu.Unlock()
+
+	keyboardMu.Lock()
+	for key := range heldKeys {
+		keyboard.KeyUp(key)
+		delete(heldKeys, key)
+	}
+	keyboardMu.Unlock()
 }
 
 func safeTypeChar(r rune) {
@@ -704,6 +740,8 @@ func handleClient(conn net.Conn) {
 	// Clear the auth deadline; the command loop sets its own per-read deadlines.
 	tlsConn.SetDeadline(time.Time{})
 	defer sessionGate.Release(conn)
+	// Release any inputs left held (a drag or modifier) if the session ends mid-press.
+	defer releaseHeldInputs()
 
 	// Audit-log the session lifecycle (the disconnect line records the duration).
 	deviceName := deviceManager.Name(deviceID)

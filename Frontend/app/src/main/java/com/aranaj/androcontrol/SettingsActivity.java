@@ -186,39 +186,39 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void setupPerformanceControls() {
         Slider slider = findViewById(R.id.bufferSlider);
-        slider.setValueFrom(SettingsManager.MOVEMENT_BUFFER_MS_MIN);
-        slider.setValueTo(SettingsManager.MOVEMENT_BUFFER_MS_MAX);
-        slider.setValue(bufferMsToSliderPos(settings.getMovementBufferMs()));
-        // Show the update rate (Hz) in the drag bubble, not the raw ms slider position.
+        // Discrete notches, one per supported rate (60/80/100/125 Hz).
+        slider.setValueFrom(0);
+        slider.setValueTo(SettingsManager.MOVEMENT_RATE_HZ.length - 1);
+        slider.setStepSize(1);
+        slider.setValue(rateHzToSliderPos(settings.getMovementRateHz()));
+        // Show the rate (Hz) in the drag bubble, not the raw slider index.
         slider.setLabelFormatter(value ->
-                getString(R.string.settings_update_rate_value, bufferMsToHz(sliderPosToBufferMs(value))));
-        updateRateLabel(settings.getMovementBufferMs());
+                getString(R.string.settings_update_rate_value, sliderPosToRateHz(value)));
+        updateRateLabel(settings.getMovementRateHz());
 
         slider.addOnChangeListener((s, value, fromUser) -> {
-            int ms = sliderPosToBufferMs(value);
-            settings.setMovementBufferMs(ms);
-            updateRateLabel(ms);
+            int hz = sliderPosToRateHz(value);
+            settings.setMovementRateHz(hz);
+            updateRateLabel(hz);
         });
     }
 
-    private void updateRateLabel(int bufferMs) {
-        rateValue.setText(getString(R.string.settings_update_rate_value, bufferMsToHz(bufferMs)));
+    private void updateRateLabel(int rateHz) {
+        rateValue.setText(getString(R.string.settings_update_rate_value, rateHz));
     }
 
-    // The slider increases left→right as update rate, so its position maps to the
-    // movement buffer (ms) inversely: left end = MAX ms (slowest), right end = MIN ms.
-    private static int sliderPosToBufferMs(float pos) {
-        return SettingsManager.MOVEMENT_BUFFER_MS_MIN
-                + SettingsManager.MOVEMENT_BUFFER_MS_MAX - Math.round(pos);
+    private static int sliderPosToRateHz(float pos) {
+        int[] opts = SettingsManager.MOVEMENT_RATE_HZ;
+        int idx = Math.max(0, Math.min(opts.length - 1, Math.round(pos)));
+        return opts[idx];
     }
 
-    private static float bufferMsToSliderPos(int bufferMs) {
-        return SettingsManager.MOVEMENT_BUFFER_MS_MIN
-                + SettingsManager.MOVEMENT_BUFFER_MS_MAX - bufferMs;
-    }
-
-    private static int bufferMsToHz(int bufferMs) {
-        return Math.round(1000f / bufferMs);
+    private static float rateHzToSliderPos(int rateHz) {
+        int[] opts = SettingsManager.MOVEMENT_RATE_HZ;
+        for (int i = 0; i < opts.length; i++) {
+            if (opts[i] == rateHz) return i;
+        }
+        return 0;
     }
 
     private void updateHapticLabel() {

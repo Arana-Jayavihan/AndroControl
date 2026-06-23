@@ -7,8 +7,7 @@ import android.util.Log;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.ArrayDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -23,7 +22,16 @@ public class Protocol {
     private final Handler mainHandler;
     private final AtomicBoolean running;
 
-    private ExecutorService sendExecutor; // single thread → preserves command order
+    // Outbound commands are drained by a single sender thread so they stay ordered.
+    // Consecutive mouse-moves are conflated (deltas summed) while queued, so a burst of
+    // input can't grow an unbounded backlog or monopolise the writer lock — which would
+    // starve the heartbeat PING and drop the connection.
+    private static final String CMD_MOVE = "M";
+    private static final int MAX_SEND_QUEUE = 256;
+    private final ArrayDeque<String> sendQueue = new ArrayDeque<>();
+    private final Object sendLock = new Object();
+    private Thread senderThread;
+
     private PrintWriter writer;
     private BufferedReader reader;
     private ProtocolListener listener;
@@ -37,7 +45,6 @@ public class Protocol {
     public Protocol() {
         this.mainHandler = new Handler(Looper.getMainLooper());
         this.running = new AtomicBoolean(false);
-        this.sendExecutor = Executors.newSingleThreadExecutor();
     }
 
     /**
@@ -47,8 +54,8 @@ public class Protocol {
         stop();
         writer = null;
         reader = null;
-        if (sendExecutor.isShutdown()) {
-            sendExecutor = Executors.newSingleThreadExecutor();
+        synchronized (sendLock) {
+            sendQueue.clear();
         }
     }
 
@@ -81,6 +88,11 @@ public class Protocol {
         if (running.getAndSet(true)) {
             return; // Already running
         }
+        synchronized (sendLock) {
+            sendQueue.clear();
+        }
+        senderThread = new Thread(this::senderLoop, "ProtocolSenderThread");
+        senderThread.start();
         responseThread = new Thread(this::responseLoop, "ProtocolResponseThread");
         responseThread.start();
     }
@@ -90,6 +102,13 @@ public class Protocol {
      */
     public void stop() {
         running.set(false);
+        synchronized (sendLock) {
+            sendLock.notifyAll(); // wake the sender so it can exit
+        }
+        if (senderThread != null && senderThread.isAlive()) {
+            senderThread.interrupt();
+            senderThread = null;
+        }
         if (responseThread != null && responseThread.isAlive()) {
             responseThread.interrupt();
             responseThread = null;
@@ -209,23 +228,80 @@ public class Protocol {
      * Use for all input commands (mouse, keys, scroll).
      */
     public void sendCommandNoAck(String command, String payload) {
-        PrintWriter w = writer; // Capture reference for thread safety
-        if (w == null || sendExecutor.isShutdown()) return;
+        if (!running.get() || writer == null) return;
 
-        // Single-threaded executor → commands are written in submission order
-        // (important for typed characters and mouse press/release sequences).
-        sendExecutor.execute(() -> {
+        synchronized (sendLock) {
+            // Conflate consecutive moves: if the last still-queued command is a move,
+            // sum the new delta into it instead of appending another packet. Discrete
+            // commands break the chain, so submission order is preserved.
+            if (CMD_MOVE.equals(command)) {
+                String merged = mergeMove(sendQueue.peekLast(), payload);
+                if (merged != null) {
+                    sendQueue.pollLast();
+                    sendQueue.addLast(merged);
+                    sendLock.notify();
+                    return;
+                }
+            }
+            if (sendQueue.size() < MAX_SEND_QUEUE) {
+                sendQueue.addLast(command + ":" + payload);
+                sendLock.notify();
+            }
+        }
+    }
+
+    /**
+     * Drains the send queue on a single thread so commands stay ordered. Blocks on the
+     * queue (not the writer lock) when idle, so the writer stays free for the heartbeat.
+     */
+    private void senderLoop() {
+        while (running.get()) {
+            String message;
+            synchronized (sendLock) {
+                while (running.get() && sendQueue.isEmpty()) {
+                    try {
+                        sendLock.wait();
+                    } catch (InterruptedException e) {
+                        return;
+                    }
+                }
+                if (!running.get()) return;
+                message = sendQueue.pollFirst();
+            }
+            PrintWriter w = writer;
+            if (w == null) continue;
             try {
-                if (w.checkError()) return;
-                String message = command + ":" + payload;
+                if (w.checkError()) continue;
                 synchronized (w) {
                     w.println(message);
                     w.flush();
                 }
+                // A returning flush proves the link is draining → liveness for heartbeat.
+                if (heartbeatManager != null) {
+                    heartbeatManager.onActivity();
+                }
             } catch (Exception e) {
                 Log.e(TAG, "Failed to send command", e);
             }
-        });
+        }
+    }
+
+    /**
+     * If {@code lastMsg} is a still-queued move ("M:dx,dy"), returns a merged move with
+     * {@code newPayload}'s delta summed in; otherwise null (don't conflate).
+     */
+    private static String mergeMove(String lastMsg, String newPayload) {
+        if (lastMsg == null || !lastMsg.startsWith(CMD_MOVE + ":")) return null;
+        try {
+            String[] a = lastMsg.substring(CMD_MOVE.length() + 1).split(",");
+            String[] b = newPayload.split(",");
+            if (a.length != 2 || b.length != 2) return null;
+            int x = Integer.parseInt(a[0].trim()) + Integer.parseInt(b[0].trim());
+            int y = Integer.parseInt(a[1].trim()) + Integer.parseInt(b[1].trim());
+            return CMD_MOVE + ":" + x + "," + y;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**
@@ -242,6 +318,11 @@ public class Protocol {
                         mainHandler.post(() -> listener.onConnectionLost());
                     }
                     break;
+                }
+
+                // Any received line is liveness (covers PONG and any server reply).
+                if (heartbeatManager != null) {
+                    heartbeatManager.onActivity();
                 }
 
                 line = line.trim();
@@ -303,6 +384,5 @@ public class Protocol {
      */
     public void shutdown() {
         stop();
-        sendExecutor.shutdownNow();
     }
 }
