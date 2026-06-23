@@ -6,6 +6,17 @@ tracked separately as `ProtocolVersion` in `Backend-GO/protocol.go` (currently *
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-06-23
+
+### Changed
+- **Lower input latency.** Disabled Nagle's algorithm (`TCP_NODELAY`) on both the
+  Android client socket and the server-accepted connection, so small, frequent input
+  events (mouse moves, keystrokes) are sent immediately instead of being coalesced.
+- The server no longer returns an `ACK` for fire-and-forget input commands (which the
+  client discards anyway), eliminating roughly one return packet per mouse move and the
+  associated delayed-ACK round trip.
+- Reduced the touchpad movement threshold (5 px to 3 px) for finer pointer precision.
+
 ## [1.0.0] - 2026-06-23
 
 ### Added

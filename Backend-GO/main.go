@@ -646,7 +646,9 @@ func handleCommand(msg *Message, clientIP string) *Response {
 		return NewNACKResponse(msg.SeqID, ErrCodeInvalidCmd)
 	}
 
-	return NewACKResponse(msg.SeqID)
+	// Input commands are fire-and-forget — the client discards ACKs. Returning nil
+	// avoids a return packet (and a Nagle/delayed-ACK round trip) per mouse move.
+	return nil
 }
 
 func handleClient(conn net.Conn) {
@@ -1051,6 +1053,14 @@ func main() {
 			conn.Write([]byte("ERROR:TOO_MANY_CONNECTIONS\n"))
 			conn.Close()
 			continue
+		}
+
+		// Disable Nagle so small input events aren't coalesced. net.Listen enables
+		// this by default on TCPConn; assert it so input latency can't regress.
+		if tlsConn, ok := conn.(*tls.Conn); ok {
+			if tcp, ok := tlsConn.NetConn().(*net.TCPConn); ok {
+				_ = tcp.SetNoDelay(true)
+			}
 		}
 
 		log.Printf("Connection accepted from %s", conn.RemoteAddr())

@@ -117,7 +117,7 @@ public class MainActivity extends AppCompatActivity implements
     private Handler mainHandler;
 
     private float lastX = 0, lastY = 0;
-    private static final int MOVEMENT_THRESHOLD = 5;
+    private static final int MOVEMENT_THRESHOLD = 3;
 
     private long touchStartTime;
     private static final long TAP_THRESHOLD = 200;
@@ -1298,6 +1298,9 @@ public class MainActivity extends AppCompatActivity implements
                 protocol.reset();
 
                 socket = tlsHelper.createSocket(serverIp, serverPort);
+                // Disable Nagle: input events are tiny and frequent, so send them
+                // immediately rather than letting the stack coalesce small writes.
+                socket.setTcpNoDelay(true);
                 socket.startHandshake();
 
                 // Check again if cancelled during handshake
