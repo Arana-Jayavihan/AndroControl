@@ -32,6 +32,7 @@ public class SettingsActivity extends AppCompatActivity {
     private View previewRight;
     private TextView widthValue;
     private TextView hapticValue;
+    private TextView rateValue;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,10 +58,12 @@ public class SettingsActivity extends AppCompatActivity {
         previewRight = findViewById(R.id.previewScrollRight);
         widthValue = findViewById(R.id.widthValue);
         hapticValue = findViewById(R.id.hapticValue);
+        rateValue = findViewById(R.id.rateValue);
 
         setupThemeControls();
         setupScrollbarControls();
         setupHapticControls();
+        setupPerformanceControls();
         setupDeviceInfo();
         refreshPreview();
     }
@@ -179,6 +182,43 @@ public class SettingsActivity extends AppCompatActivity {
                 previewHaptic();
             }
         });
+    }
+
+    private void setupPerformanceControls() {
+        Slider slider = findViewById(R.id.bufferSlider);
+        slider.setValueFrom(SettingsManager.MOVEMENT_BUFFER_MS_MIN);
+        slider.setValueTo(SettingsManager.MOVEMENT_BUFFER_MS_MAX);
+        slider.setValue(bufferMsToSliderPos(settings.getMovementBufferMs()));
+        // Show the update rate (Hz) in the drag bubble, not the raw ms slider position.
+        slider.setLabelFormatter(value ->
+                getString(R.string.settings_update_rate_value, bufferMsToHz(sliderPosToBufferMs(value))));
+        updateRateLabel(settings.getMovementBufferMs());
+
+        slider.addOnChangeListener((s, value, fromUser) -> {
+            int ms = sliderPosToBufferMs(value);
+            settings.setMovementBufferMs(ms);
+            updateRateLabel(ms);
+        });
+    }
+
+    private void updateRateLabel(int bufferMs) {
+        rateValue.setText(getString(R.string.settings_update_rate_value, bufferMsToHz(bufferMs)));
+    }
+
+    // The slider increases left→right as update rate, so its position maps to the
+    // movement buffer (ms) inversely: left end = MAX ms (slowest), right end = MIN ms.
+    private static int sliderPosToBufferMs(float pos) {
+        return SettingsManager.MOVEMENT_BUFFER_MS_MIN
+                + SettingsManager.MOVEMENT_BUFFER_MS_MAX - Math.round(pos);
+    }
+
+    private static float bufferMsToSliderPos(int bufferMs) {
+        return SettingsManager.MOVEMENT_BUFFER_MS_MIN
+                + SettingsManager.MOVEMENT_BUFFER_MS_MAX - bufferMs;
+    }
+
+    private static int bufferMsToHz(int bufferMs) {
+        return Math.round(1000f / bufferMs);
     }
 
     private void updateHapticLabel() {

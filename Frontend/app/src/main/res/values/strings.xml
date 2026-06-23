@@ -150,6 +150,10 @@
     <string name="settings_scroll_direction">Direction</string>
     <string name="settings_scroll_natural">Natural</string>
     <string name="settings_scroll_inverted">Inverted</string>
+    <string name="settings_performance">Performance</string>
+    <string name="settings_update_rate">Pointer update rate</string>
+    <string name="settings_update_rate_desc">How often pointer movements are sent to the server. Higher is smoother and lower-latency; lower uses less network traffic and battery.</string>
+    <string name="settings_update_rate_value">%1$d Hz</string>
     <string name="settings_haptics">Haptics</string>
     <string name="settings_haptics_desc">Vibration feedback for taps and key presses.</string>
     <string name="settings_haptic_intensity">Vibration intensity</string>

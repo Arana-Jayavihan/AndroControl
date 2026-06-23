@@ -129,6 +129,9 @@ public class MainActivity extends AppCompatActivity implements
     private static final int MOVEMENT_BUFFER_MS = 16; // Increased for better performance
     private static final float MOVEMENT_SENSITIVITY = 1.5f;
     private long lastMovementTime = 0;
+    // How long pointer moves are coalesced before sending (ms). Lower = higher update
+    // rate / lower latency. User-tunable (shown as Hz in Settings); read in onResume.
+    private volatile int movementBufferMs = MOVEMENT_BUFFER_MS;
     private float accumulatedX = 0;
     private float accumulatedY = 0;
     private final Object movementLock = new Object();
@@ -813,7 +816,7 @@ public class MainActivity extends AppCompatActivity implements
                     }
 
                     long currentTime = System.currentTimeMillis();
-                    if (currentTime - lastMovementTime >= MOVEMENT_BUFFER_MS) {
+                    if (currentTime - lastMovementTime >= movementBufferMs) {
                         sendAccumulatedMovement();
                         lastMovementTime = currentTime;
                     }
@@ -1747,6 +1750,8 @@ public class MainActivity extends AppCompatActivity implements
         super.onResume();
         // Re-apply scroll-bar preferences in case they changed in Settings.
         applyScrollbarSettings();
+        // Pick up the pointer update-rate setting if it changed in Settings.
+        movementBufferMs = settingsManager.getMovementBufferMs();
         // Skip auto-reconnect when returning from an in-app screen (QR scanner /
         // Settings); only reconnect when genuinely returning from the background.
         if (suppressResumeReconnect) {

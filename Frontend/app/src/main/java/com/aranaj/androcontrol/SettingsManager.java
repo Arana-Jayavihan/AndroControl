@@ -42,6 +42,13 @@ public class SettingsManager {
     // duplicate server-side device records). App-global; never tied to a server.
     private static final String KEY_CLIENT_DEVICE_ID = "client_device_id";
 
+    // Pointer movement buffer (ms): how long moves are coalesced before sending.
+    // Lower = higher update rate / lower latency. Surfaced to the user as Hz.
+    private static final String KEY_MOVEMENT_BUFFER = "movement_buffer_ms";
+    public static final int MOVEMENT_BUFFER_MS_MIN = 4;
+    public static final int MOVEMENT_BUFFER_MS_MAX = 16;
+    public static final int MOVEMENT_BUFFER_MS_DEFAULT = 16;
+
     // Haptic feedback intensity (0 = off .. 100 = strongest)
     private static final String KEY_HAPTIC_INTENSITY = "haptic_intensity";
     public static final int HAPTIC_INTENSITY_MIN = 0;
@@ -166,5 +173,21 @@ public class SettingsManager {
         int pct = getHapticIntensity();
         if (pct <= 0) return 0;
         return Math.max(1, Math.round(pct / 100f * 255f));
+    }
+
+    // ---------------- Pointer update rate ----------------
+
+    /**
+     * @return the pointer movement buffer in milliseconds, clamped to
+     * {@link #MOVEMENT_BUFFER_MS_MIN}..{@link #MOVEMENT_BUFFER_MS_MAX}. Lower values
+     * mean a higher update rate (shown to the user as Hz) and lower latency.
+     */
+    public int getMovementBufferMs() {
+        int v = prefs.getInt(KEY_MOVEMENT_BUFFER, MOVEMENT_BUFFER_MS_DEFAULT);
+        return Math.max(MOVEMENT_BUFFER_MS_MIN, Math.min(MOVEMENT_BUFFER_MS_MAX, v));
+    }
+
+    public void setMovementBufferMs(int ms) {
+        prefs.edit().putInt(KEY_MOVEMENT_BUFFER, ms).apply();
     }
 }

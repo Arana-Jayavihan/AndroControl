@@ -6,6 +6,13 @@ tracked separately as `ProtocolVersion` in `Backend-GO/protocol.go` (currently *
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-06-23
+
+### Added
+- **Pointer update-rate setting** (Settings → Performance): a slider that adjusts how
+  often pointer movements are sent (4–16 ms of coalescing), shown to the user in Hz
+  (≈63–250 Hz). Higher rate = smoother and lower-latency; lower = less traffic/battery.
+
 ## [1.0.2] - 2026-06-23
 
 ### Changed
