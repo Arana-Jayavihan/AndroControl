@@ -111,7 +111,7 @@ public class ConnectionService extends Service {
         PendingIntent disconnectPi = PendingIntent.getBroadcast(this, 1, disconnectIntent,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
+        NotificationCompat.Builder b = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(getString(R.string.notif_connected_title))
                 .setContentText(getString(R.string.notif_connected_text, serverName))
                 .setSmallIcon(R.drawable.ic_launcher_monochrome)
@@ -120,8 +120,20 @@ public class ConnectionService extends Service {
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setContentIntent(openPi)
-                .addAction(0, getString(R.string.notif_disconnect), disconnectPi)
-                .build();
+                .addAction(0, getString(R.string.notif_disconnect), disconnectPi);
+
+        // Clipboard sync: one-tap "Send clipboard" — the transparent trampoline reads
+        // the clip in the foreground (required on Android 10+) and hands it back to
+        // MainActivity to push to the desktop.
+        if (new SettingsManager(this).isClipboardSyncEnabled()) {
+            Intent clipIntent = new Intent(this, ClipboardBridgeActivity.class)
+                    .setAction(ClipboardBridgeActivity.ACTION_SEND)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            PendingIntent clipPi = PendingIntent.getActivity(this, 3, clipIntent,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            b.addAction(0, getString(R.string.notif_send_clipboard), clipPi);
+        }
+        return b.build();
     }
 
     private void createChannel() {

@@ -1,7 +1,13 @@
 package com.aranaj.androcontrol;
 
 import android.Manifest;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
@@ -22,6 +28,8 @@ import android.view.inputmethod.InputMethodManager;
 import androidx.activity.EdgeToEdge;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -99,6 +107,18 @@ public class MainActivity extends AppCompatActivity implements
 
     // Receives the "Disconnect" action from the foreground-service notification.
     private BroadcastReceiver disconnectReceiver;
+
+    // Clipboard sync (opt-in). The connection lives in this Activity, so the
+    // background "Send clipboard" trampoline broadcasts the read text back here.
+    public static final String ACTION_CLIP_SEND = "com.aranaj.androcontrol.action.CLIP_SEND";
+    private static final String CLIP_CHANNEL_ID = "androcontrol_clipboard";
+    private static final int CLIP_NOTIFICATION_ID = 1002;
+    private ClipboardManager clipboardManager;
+    private ClipboardManager.OnPrimaryClipChangedListener clipChangedListener;
+    private BroadcastReceiver clipSendReceiver;
+    private volatile String lastClipText = "";
+    private boolean clipboardSyncEnabled = false;
+    private boolean isResumed = false;
 
     // Suppresses the "connection lost" toast when we deliberately closed the link (e.g. unpair).
     private volatile boolean suppressConnectionLostToast = false;
@@ -337,6 +357,25 @@ public class MainActivity extends AppCompatActivity implements
         ContextCompat.registerReceiver(this, disconnectReceiver,
                 new IntentFilter(ConnectionService.ACTION_DISCONNECT_REQUEST),
                 ContextCompat.RECEIVER_NOT_EXPORTED);
+
+        // Clipboard sync wiring.
+        clipboardManager = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        clipChangedListener = this::onLocalClipboardChanged;
+        clipSendReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                // Text was read by the transparent trampoline (foreground) and parked
+                // in ClipboardBridge; push it over the Activity-owned connection.
+                String text = ClipboardBridge.takeOutgoing();
+                if (text != null && !text.isEmpty() && protocol != null) {
+                    lastClipText = text;
+                    protocol.sendClip(text);
+                }
+            }
+        };
+        ContextCompat.registerReceiver(this, clipSendReceiver,
+                new IntentFilter(ACTION_CLIP_SEND), ContextCompat.RECEIVER_NOT_EXPORTED);
+        createClipboardChannel();
 
         // Ask for notification permission so the ongoing-connection notification is visible (Android 13+).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
@@ -1754,12 +1793,94 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     @Override
+    public void onClipboardReceived(String text) {
+        if (!clipboardSyncEnabled || text == null || text.isEmpty()) return;
+        if (isResumed) {
+            applyClipboard(text); // foreground: set the clipboard directly
+        } else {
+            postClipboardNotification(text); // background: tap-to-copy notification
+        }
+    }
+
+    /** Sets the local clipboard, suppressing the echo from our own change listener. */
+    private void applyClipboard(String text) {
+        if (clipboardManager == null) return;
+        lastClipText = text;
+        try {
+            clipboardManager.setPrimaryClip(ClipData.newPlainText("AndroControl", text));
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to set clipboard", e);
+        }
+    }
+
+    /** Called by the OnPrimaryClipChangedListener while foreground: push local copies. */
+    private void onLocalClipboardChanged() {
+        if (!clipboardSyncEnabled || protocol == null || !protocol.isConnected()) return;
+        String text = readClipboardText();
+        if (text == null || text.isEmpty() || text.equals(lastClipText)) return;
+        lastClipText = text;
+        protocol.sendClip(text);
+    }
+
+    private String readClipboardText() {
+        if (clipboardManager == null || !clipboardManager.hasPrimaryClip()) return null;
+        ClipData clip = clipboardManager.getPrimaryClip();
+        if (clip == null || clip.getItemCount() == 0) return null;
+        CharSequence cs = clip.getItemAt(0).coerceToText(this);
+        return cs == null ? null : cs.toString();
+    }
+
+    private void postClipboardNotification(String text) {
+        ClipboardBridge.setIncoming(text); // avoid large PendingIntent extras
+        Intent i = new Intent(this, ClipboardBridgeActivity.class)
+                .setAction(ClipboardBridgeActivity.ACTION_SET)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        PendingIntent pi = PendingIntent.getActivity(this, 2, i,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification n = new NotificationCompat.Builder(this, CLIP_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
+                .setContentTitle(getString(R.string.clip_notif_title))
+                .setContentText(getString(R.string.clip_notif_text))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+                .setAutoCancel(true)
+                .setContentIntent(pi)
+                .addAction(0, getString(R.string.clip_notif_copy), pi)
+                .build();
+        try {
+            NotificationManagerCompat.from(this).notify(CLIP_NOTIFICATION_ID, n);
+        } catch (SecurityException ignored) {
+            // POST_NOTIFICATIONS not granted — nothing we can do.
+        }
+    }
+
+    private void createClipboardChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm != null && nm.getNotificationChannel(CLIP_CHANNEL_ID) == null) {
+                NotificationChannel ch = new NotificationChannel(CLIP_CHANNEL_ID,
+                        getString(R.string.clip_channel_name), NotificationManager.IMPORTANCE_HIGH);
+                ch.setDescription(getString(R.string.clip_channel_desc));
+                ch.setLockscreenVisibility(Notification.VISIBILITY_SECRET);
+                nm.createNotificationChannel(ch);
+            }
+        }
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
+        isResumed = true;
         // Re-apply scroll-bar preferences in case they changed in Settings.
         applyScrollbarSettings();
         // Pick up the pointer update-rate setting if it changed in Settings.
         movementBufferMs = settingsManager.getMovementBufferMs();
+        // Clipboard sync: watch local copies while foreground and catch one made while away.
+        clipboardSyncEnabled = settingsManager.isClipboardSyncEnabled();
+        if (clipboardSyncEnabled && clipboardManager != null) {
+            clipboardManager.addPrimaryClipChangedListener(clipChangedListener);
+            onLocalClipboardChanged();
+        }
         // Skip auto-reconnect when returning from an in-app screen (QR scanner /
         // Settings); only reconnect when genuinely returning from the background.
         if (suppressResumeReconnect) {
@@ -1891,6 +2012,18 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        isResumed = false;
+        if (clipboardManager != null && clipChangedListener != null) {
+            try {
+                clipboardManager.removePrimaryClipChangedListener(clipChangedListener);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
 
@@ -1903,6 +2036,14 @@ public class MainActivity extends AppCompatActivity implements
             } catch (Exception ignored) {
             }
             disconnectReceiver = null;
+        }
+
+        if (clipSendReceiver != null) {
+            try {
+                unregisterReceiver(clipSendReceiver);
+            } catch (Exception ignored) {
+            }
+            clipSendReceiver = null;
         }
 
         synchronized (connectionLock) {

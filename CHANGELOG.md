@@ -6,6 +6,24 @@ tracked separately as `ProtocolVersion` in `Backend-GO/protocol.go` (currently *
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-24
+
+### Added
+- **Bidirectional clipboard sync** between the phone and the desktop while connected
+  (opt-in: Settings → Clipboard sync).
+  - **Desktop → phone:** when the app is foreground the clipboard is set directly; when
+    backgrounded a "Clipboard from desktop — tap to copy" notification appears (generic
+    text, hidden on the lockscreen) that sets the clipboard via a momentary transparent
+    activity on tap.
+  - **Phone → desktop:** auto-synced while the app is foreground; when backgrounded, a
+    "Send clipboard" action on the connection notification pushes the phone's clipboard.
+  - The hardened server only **relays** clipboard text over a loopback channel
+    (`-clip-port`); a per-user desktop agent (`androcontrol-clip`) does the actual
+    clipboard access using wl-clipboard (Wayland) or xclip (X11), since the sandboxed
+    server can't reach the display server. Text only, 1 MB cap, echo-suppressed, and
+    never logged. NixOS: `services.androcontrol.clipboardSync = true`; other distros: a
+    portable `androcontrol-clip` binary + systemd `--user` unit.
+
 ## [1.0.5] - 2026-06-23
 
 ### Changed

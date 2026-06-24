@@ -1,0 +1,31 @@
+# systemd --user unit for the AndroControl clipboard sync agent.
+#
+# The agent bridges your desktop clipboard with the AndroControl server's loopback
+# clipboard relay, so clipboard text syncs both ways with the paired phone. The server
+# itself is sandboxed and can't reach the display server, so this runs in your session.
+#
+# Requirements: the server must be started with -clip-port (default 5051), and either
+# wl-clipboard (Wayland) or xclip (X11) must be installed and on PATH.
+#
+# Install:
+#   install -Dm755 androcontrol-clip          ~/.local/bin/androcontrol-clip
+#   install -Dm644 androcontrol-clip.service  ~/.config/systemd/user/androcontrol-clip.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now androcontrol-clip
+#
+# Env (optional, set with `systemctl --user edit androcontrol-clip` or here):
+#   ANDROCONTROL_CLIP_PORT   relay port (default 5051; must match the server's -clip-port)
+#   ANDROCONTROL_CLIP_HOST   relay host (default 127.0.0.1)
+#   ANDROCONTROL_CLIP_TOKEN  shared secret matching the server's ANDROCONTROL_CLIP_TOKEN
+[Unit]
+Description=AndroControl clipboard sync agent
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/androcontrol-clip
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

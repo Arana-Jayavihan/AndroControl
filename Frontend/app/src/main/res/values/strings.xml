@@ -104,6 +104,18 @@
     <string name="notif_connected_title">AndroControl connected</string>
     <string name="notif_connected_text">Controlling %1$s</string>
     <string name="notif_disconnect">Disconnect</string>
+    <string name="notif_send_clipboard">Send clipboard</string>
+
+    <!-- Clipboard sync -->
+    <string name="clip_channel_name">Clipboard sync</string>
+    <string name="clip_channel_desc">Notifications when clipboard text arrives from the desktop.</string>
+    <string name="clip_notif_title">Clipboard from desktop</string>
+    <string name="clip_notif_text">Tap to copy</string>
+    <string name="clip_notif_copy">Copy</string>
+    <string name="settings_clipboard">Clipboard sync</string>
+    <string name="settings_clipboard_desc">Share clipboard text both ways with the desktop while connected. When the app is in the background, desktop copies arrive as a tap-to-copy notification, and you can push the phone\'s clipboard with the Send clipboard button on the connection notification.</string>
+    <string name="settings_clipboard_on">On</string>
+    <string name="settings_clipboard_off">Off</string>
 
     <!-- Device management -->
     <string name="settings_this_device">This device</string>

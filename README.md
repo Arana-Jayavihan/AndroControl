@@ -177,6 +177,30 @@ Both need your user to be able to read the service journal (group
 `systemd-journal`/`wheel`/`adm`). For headless push instead (ntfy/webhook/email), point a
 journal-watcher at `curl`/`mail` rather than `notify-send`.
 
+### Clipboard sync
+Bidirectional clipboard sharing with the phone while connected (opt-in: **Settings →
+Clipboard sync** in the app). Copy on the desktop and paste on the phone, or vice versa.
+
+Because the sandboxed server can't reach the display server's clipboard, the server only
+**relays** clipboard text over a loopback channel, and a small per-user desktop agent
+(`androcontrol-clip`) does the actual clipboard access — **wl-clipboard** on Wayland or
+**xclip** on X11.
+
+- **NixOS:** set `services.androcontrol.clipboardSync = true;` — enables the relay and
+  adds a per-user agent service.
+- **Any systemd distro:** start the server with `-clip-port 5051`, then install
+  [`androcontrol-clip`](Backend-GO/cmd/androcontrol-clip) (built binary) and
+  [`androcontrol-clip.service`](Backend-GO/deploy/androcontrol-clip.service) and
+  `systemctl --user enable --now androcontrol-clip` (needs `wl-clipboard` or `xclip`).
+
+On Android 10+ the OS only lets an app touch the clipboard while focused, so:
+desktop→phone copies arrive instantly when the app is foreground, or as a **tap-to-copy
+notification** when it's backgrounded; phone→desktop syncs automatically while the app is
+foreground, or via the **Send clipboard** button on the connection notification.
+Text only, 1 MB cap, and clipboard contents are never logged. The loopback relay is
+loopback-only; set a shared `ANDROCONTROL_CLIP_TOKEN` on both server and agent to also
+guard against other local users.
+
 ## Usage
 
 ### Mouse Controls
@@ -325,6 +349,7 @@ services.androcontrol = {
   openFirewall = true;            # or keep false and open the port elsewhere
   # bindAddress = "127.0.0.1";    # loopback only (reach via VPN/SSH tunnel)
   desktopNotifications = true;    # per-user notify-send popups on connect/disconnect
+  clipboardSync = true;          # bidirectional clipboard sync (per-user agent)
 };
 ```
 

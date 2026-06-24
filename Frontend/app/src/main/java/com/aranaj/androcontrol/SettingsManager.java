@@ -196,4 +196,17 @@ public class SettingsManager {
     public int getMovementBufferMs() {
         return Math.round(1000f / getMovementRateHz());
     }
+
+    // ---------------- Clipboard sync ----------------
+
+    private static final String KEY_CLIPBOARD_SYNC = "clipboard_sync";
+
+    /** @return true if bidirectional clipboard sync with the desktop is enabled. */
+    public boolean isClipboardSyncEnabled() {
+        return prefs.getBoolean(KEY_CLIPBOARD_SYNC, false);
+    }
+
+    public void setClipboardSyncEnabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_CLIPBOARD_SYNC, enabled).apply();
+    }
 }

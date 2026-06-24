@@ -61,6 +61,11 @@ var (
 	authThrottler *AuthThrottler
 	activeConns   *ActiveConns
 	sessionGate   *SessionGate
+
+	// Clipboard relay (optional, enabled by -clip-port); bridges clipboard text
+	// between the device and a desktop session agent over loopback.
+	clipRelay   *ClipRelay
+	clipEnabled bool
 )
 
 func init() {
@@ -725,8 +730,13 @@ func handleClient(conn net.Conn) {
 	certFP := CertFingerprintHex(state.PeerCertificates[0])
 
 	// Bounded scanner caps per-connection memory (prevents unbounded-line DoS).
+	// Clipboard messages (base64) can be large, so widen the cap when the relay is on.
 	scanner := bufio.NewScanner(conn)
-	scanner.Buffer(make([]byte, 0, 4096), MaxLineLength)
+	maxLine := MaxLineLength
+	if clipEnabled {
+		maxLine = MaxClipWire
+	}
+	scanner.Buffer(make([]byte, 0, 4096), maxLine)
 
 	// Identity handshake (mTLS cert recognition or pairing). On success the single
 	// session slot has been claimed for this connection. This exchange is
@@ -742,6 +752,14 @@ func handleClient(conn net.Conn) {
 	defer sessionGate.Release(conn)
 	// Release any inputs left held (a drag or modifier) if the session ends mid-press.
 	defer releaseHeldInputs()
+
+	// Per-connection serialized writer; route command-loop writes through it so the
+	// clipboard relay can also push clips to this connection without interleaving.
+	dw := &connWriter{c: conn}
+	if clipEnabled {
+		clipRelay.setDevice(dw)
+		defer clipRelay.clearDevice(dw)
+	}
 
 	// Audit-log the session lifecycle (the disconnect line records the duration).
 	deviceName := deviceManager.Name(deviceID)
@@ -762,7 +780,7 @@ func handleClient(conn net.Conn) {
 			err := scanner.Err()
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				log.Printf("Idle timeout for %s", clientAddr)
-				sendResponse(conn, "TIMEOUT\n")
+				dw.writeString("TIMEOUT\n")
 			} else if err != nil {
 				// Includes bufio.ErrTooLong for over-length lines.
 				logWarn("Read error from %s: %v", clientAddr, err)
@@ -773,6 +791,17 @@ func handleClient(conn net.Conn) {
 		// Scanner strips the trailing newline (and a trailing \r); spaces preserved.
 		line := scanner.Text()
 		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		// Clipboard relay: forward the phone's clip to the desktop agent (opaque
+		// base64, capped). Handled before parsing since the payload exceeds the
+		// normal command/payload limits.
+		if clipEnabled && strings.HasPrefix(line, "CLIP:") {
+			b64 := line[len("CLIP:"):]
+			if len(b64) > 0 && len(b64) <= MaxClipWire {
+				clipRelay.fromDevice(b64)
+			}
 			continue
 		}
 
@@ -787,7 +816,7 @@ func handleClient(conn net.Conn) {
 			if deviceManager.Revoke(deviceID) {
 				logAudit("unpair device_id=%s ip=%s", deviceID, extractIP(clientAddr))
 			}
-			sendResponse(conn, "UNPAIR:OK\n")
+			dw.writeString("UNPAIR:OK\n")
 			// Drop any other live connections for this now-revoked device.
 			activeConns.CloseForDevice(deviceID)
 			return
@@ -795,13 +824,13 @@ func handleClient(conn net.Conn) {
 
 		msg, err := ParseMessage(line)
 		if err != nil {
-			sendResponse(conn, FormatNACK(-1, ErrCodeBadFormat))
+			dw.writeString(FormatNACK(-1, ErrCodeBadFormat))
 			continue
 		}
 
 		response := handleCommand(msg, clientIP)
 		if response != nil {
-			sendResponse(conn, response.String())
+			dw.writeString(response.String())
 		}
 	}
 }
@@ -929,6 +958,7 @@ func main() {
 	// CLI flags. Device-admin commands run without needing /dev/uinput.
 	addr := flag.String("addr", HOST, "Bind address (e.g. 0.0.0.0 for all interfaces, 127.0.0.1 for loopback only)")
 	port := flag.Int("port", PORT, "TCP port to listen on")
+	clipPort := flag.Int("clip-port", 0, "Loopback port for the desktop clipboard agent (0 = clipboard sync disabled)")
 	dataDir := flag.String("data-dir", "", "Directory holding certs/, auth_token and devices.json (default: current directory)")
 	logLevel := flag.String("log-level", "info", "Log verbosity: debug, info, warn, error")
 	listDevices := flag.Bool("list-devices", false, "List paired devices and exit")
@@ -1047,6 +1077,14 @@ func main() {
 			return
 		}
 	}()
+
+	// Optional clipboard relay: a loopback channel a desktop session agent connects to,
+	// bridging clipboard text between the phone and the local system clipboard.
+	if *clipPort > 0 {
+		clipRelay = NewClipRelay()
+		clipEnabled = true
+		go startClipListener("127.0.0.1", *clipPort, os.Getenv("ANDROCONTROL_CLIP_TOKEN"), shuttingDown)
+	}
 
 	log.Println("════════════════════════════════════════════════════════════════════")
 	log.Printf("  AndroControl Server v%s", ProtocolVersion)

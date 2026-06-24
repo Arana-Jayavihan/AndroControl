@@ -55,6 +55,16 @@
 
     <style name="Theme.AndroControl" parent="Base.Theme.AndroControl" />
 
+    <!-- Invisible theme for the momentary clipboard trampoline activity. -->
+    <style name="Theme.AndroControl.Transparent" parent="Theme.AndroControl">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
     <!-- ================= Shapes ================= -->
     <style name="ShapeAppearance.AndroControl.Small" parent="ShapeAppearance.Material3.Corner.Small">
         <item name="cornerFamily">rounded</item>

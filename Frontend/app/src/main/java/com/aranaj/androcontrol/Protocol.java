@@ -2,11 +2,13 @@ package com.aranaj.androcontrol;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Base64;
 import android.util.Log;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -38,8 +40,14 @@ public class Protocol {
     private HeartbeatManager heartbeatManager;
     private Thread responseThread;
 
+    /** Raw clipboard text cap (must match the server's MaxClipBytes). */
+    private static final int MAX_CLIP_BYTES = 1 << 20;
+
     public interface ProtocolListener {
         void onConnectionLost();
+
+        /** A clipboard update arrived from the desktop. Delivered on the main thread. */
+        void onClipboardReceived(String text);
     }
 
     public Protocol() {
@@ -305,6 +313,17 @@ public class Protocol {
     }
 
     /**
+     * Sends the local clipboard text to the desktop (fire-and-forget, base64-encoded).
+     * No-op if empty or over the size cap.
+     */
+    public void sendClip(String text) {
+        if (text == null || text.isEmpty()) return;
+        byte[] raw = text.getBytes(StandardCharsets.UTF_8);
+        if (raw.length > MAX_CLIP_BYTES) return;
+        sendCommandNoAck("CLIP", Base64.encodeToString(raw, Base64.NO_WRAP));
+    }
+
+    /**
      * Response loop that reads and processes server responses.
      */
     private void responseLoop() {
@@ -350,6 +369,18 @@ public class Protocol {
         if (response.equals("PONG")) {
             if (heartbeatManager != null) {
                 heartbeatManager.onPongReceived();
+            }
+            return;
+        }
+        if (response.startsWith("CLIP:")) {
+            if (listener == null) return;
+            try {
+                byte[] data = Base64.decode(response.substring(5), Base64.NO_WRAP);
+                if (data.length == 0 || data.length > MAX_CLIP_BYTES) return;
+                final String text = new String(data, StandardCharsets.UTF_8);
+                mainHandler.post(() -> listener.onClipboardReceived(text));
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "Ignoring malformed CLIP payload");
             }
             return;
         }

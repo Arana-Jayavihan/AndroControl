@@ -64,6 +64,7 @@ public class SettingsActivity extends AppCompatActivity {
         setupScrollbarControls();
         setupHapticControls();
         setupPerformanceControls();
+        setupClipboardControls();
         setupDeviceInfo();
         refreshPreview();
     }
@@ -200,6 +201,15 @@ public class SettingsActivity extends AppCompatActivity {
             int hz = sliderPosToRateHz(value);
             settings.setMovementRateHz(hz);
             updateRateLabel(hz);
+        });
+    }
+
+    private void setupClipboardControls() {
+        MaterialButtonToggleGroup group = findViewById(R.id.clipboardGroup);
+        group.check(settings.isClipboardSyncEnabled() ? R.id.clipboardOn : R.id.clipboardOff);
+        group.addOnButtonCheckedListener((g, checkedId, isChecked) -> {
+            if (!isChecked) return;
+            settings.setClipboardSyncEnabled(checkedId == R.id.clipboardOn);
         });
     }
 

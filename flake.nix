@@ -15,7 +15,7 @@
         packages = {
           androcontrol = pkgs.buildGoModule {
             pname = "androcontrol";
-            version = "1.0.0";
+            version = "1.1.0";
 
             src = ./Backend-GO;
 
@@ -178,6 +178,18 @@
                 in the graphical session (the server itself is sandboxed and can't reach
                 the session bus). Each desktop user must be able to read the service
                 journal (member of the systemd-journal/wheel/adm group)'';
+
+              clipboardSync = lib.mkEnableOption ''
+                bidirectional clipboard sync with the paired phone. Adds a loopback
+                clipboard relay to the server and a per-user session agent
+                (androcontrol-clip) that bridges the system clipboard — Wayland via
+                wl-clipboard or X11 via xclip — with the device. Loopback-only'';
+
+              clipPort = lib.mkOption {
+                type = lib.types.port;
+                default = 5051;
+                description = "Loopback port for the clipboard relay (used only when clipboardSync is enabled)";
+              };
             };
 
             config = lib.mkIf cfg.enable {
@@ -211,7 +223,8 @@
                   User = cfg.user;
                   Group = cfg.group;
                   WorkingDirectory = cfg.dataDir;
-                  ExecStart = "${cfg.package}/bin/AndroControl -addr ${cfg.bindAddress} -port ${toString cfg.port}";
+                  ExecStart = "${cfg.package}/bin/AndroControl -addr ${cfg.bindAddress} -port ${toString cfg.port}"
+                    + lib.optionalString cfg.clipboardSync " -clip-port ${toString cfg.clipPort}";
                   # `systemctl reload androcontrol` re-reads devices.json so external
                   # revoke/cleanup changes apply without a full restart.
                   ExecReload = "${pkgs.coreutils}/bin/kill -HUP $MAINPID";
@@ -272,6 +285,23 @@
                     esac
                   done
                 '';
+              };
+
+              # Per-user clipboard sync agent: bridges the session clipboard with the
+              # server's loopback relay (the sandboxed server can't reach the display
+              # server itself). Uses wl-clipboard on Wayland or xclip on X11.
+              systemd.user.services.androcontrol-clip = lib.mkIf cfg.clipboardSync {
+                description = "AndroControl clipboard sync agent";
+                wantedBy = [ "graphical-session.target" ];
+                partOf = [ "graphical-session.target" ];
+                after = [ "graphical-session.target" ];
+                path = [ pkgs.wl-clipboard pkgs.xclip ];
+                environment.ANDROCONTROL_CLIP_PORT = toString cfg.clipPort;
+                serviceConfig = {
+                  ExecStart = "${cfg.package}/bin/androcontrol-clip";
+                  Restart = "always";
+                  RestartSec = 5;
+                };
               };
 
               networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];

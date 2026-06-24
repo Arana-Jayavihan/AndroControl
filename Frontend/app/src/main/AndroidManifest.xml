@@ -52,6 +52,16 @@
             android:name=".SettingsActivity"
             android:parentActivityName=".MainActivity" />
 
+        <!-- Invisible clipboard trampoline (foreground read/write from a notification) -->
+        <activity
+            android:name=".ClipboardBridgeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AndroControl.Transparent"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance" />
+
         <!-- Keeps the connection alive while backgrounded -->
         <service
             android:name=".ConnectionService"
