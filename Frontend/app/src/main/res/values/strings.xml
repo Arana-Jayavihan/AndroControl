@@ -117,6 +117,30 @@
     <string name="settings_clipboard_on">On</string>
     <string name="settings_clipboard_off">Off</string>
 
+    <!-- File transfer -->
+    <string name="share_label">Send via AndroControl</string>
+    <string name="share_not_connected">Connect AndroControl first to send files</string>
+    <string name="share_nothing">Nothing to send</string>
+    <string name="share_too_large">%d file(s) skipped — over the 5 MB limit</string>
+    <plurals name="share_sending">
+        <item quantity="one">Sending %d file via AndroControl…</item>
+        <item quantity="other">Sending %d files via AndroControl…</item>
+    </plurals>
+    <string name="file_channel_name">File transfers</string>
+    <string name="file_offer_title">Incoming file</string>
+    <string name="file_offer_text">%1$s (%2$s) — accept?</string>
+    <string name="file_accept">Accept</string>
+    <string name="file_reject">Reject</string>
+    <string name="file_received">Received %1$s</string>
+    <string name="file_sent">Sent %1$s</string>
+    <string name="file_sending">Sending %1$s</string>
+    <string name="file_receiving">Receiving %1$s</string>
+    <string name="file_error">Transfer failed: %1$s</string>
+    <string name="settings_filetransfer">File transfer</string>
+    <string name="settings_filetransfer_desc">Send files to the desktop (Share → Send via AndroControl) and receive files from it (saved to Downloads/AndroControl). Up to 5 MB per file; each transfer asks before it starts.</string>
+    <string name="settings_filetransfer_on">On</string>
+    <string name="settings_filetransfer_off">Off</string>
+
     <!-- Device management -->
     <string name="settings_this_device">This device</string>
     <string name="settings_device_name">Name</string>

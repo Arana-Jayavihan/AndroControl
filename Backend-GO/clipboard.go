@@ -132,32 +132,43 @@ func startClipListener(addr string, port int, token string, stop <-chan struct{}
 }
 
 func handleAgentConn(conn net.Conn, token string) {
-	defer conn.Close()
-
 	if !isLoopbackAddr(conn.RemoteAddr()) {
 		logWarn("clip relay: rejected non-loopback connection from %s", conn.RemoteAddr())
+		conn.Close()
 		return
 	}
 
-	scanner := bufio.NewScanner(conn)
-	scanner.Buffer(make([]byte, 0, 4096), MaxClipWire)
+	r := bufio.NewReaderSize(conn, 65536)
 
-	// Handshake: "AGENT:<token>".
+	// Handshake: "AGENT:<token>" (clipboard control) or "AGENT-DATA:<token>" (bulk
+	// file-transfer sub-channel).
 	conn.SetReadDeadline(time.Now().Add(clipAgentAuthTimeout))
-	if !scanner.Scan() {
+	first, err := r.ReadString('\n')
+	if err != nil {
+		conn.Close()
 		return
 	}
-	first := strings.TrimRight(scanner.Text(), "\r\n")
-	if !strings.HasPrefix(first, "AGENT:") {
+	first = strings.TrimRight(first, "\r\n")
+	conn.SetReadDeadline(time.Time{})
+
+	// Bulk data sub-channel: hand the raw connection to the transfer bridge (which
+	// owns and closes it). The transfer protocol is end-to-end with the phone.
+	if _, ok := matchAgentHandshake(first, "AGENT-DATA:", token); ok {
+		if _, werr := conn.Write([]byte("AGENT-DATA:OK\n")); werr != nil {
+			conn.Close()
+			return
+		}
+		logInfo("data transfer: agent bulk channel connected")
+		dataBridgeInst.register(roleAgent, conn)
+		return
+	}
+
+	// Clipboard control sub-channel (line-based).
+	defer conn.Close()
+	if _, ok := matchAgentHandshake(first, "AGENT:", token); !ok {
 		logWarn("clip relay: bad agent handshake")
 		return
 	}
-	provided := strings.TrimPrefix(first, "AGENT:")
-	if token != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
-		logWarn("clip relay: agent token mismatch")
-		return
-	}
-	conn.SetReadDeadline(time.Time{})
 
 	w := &connWriter{c: conn}
 	clipRelay.setAgent(w)
@@ -166,6 +177,8 @@ func handleAgentConn(conn net.Conn, token string) {
 	logInfo("clip relay: agent connected")
 	defer logInfo("clip relay: agent disconnected")
 
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 4096), MaxClipWire)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "CLIP:") {
@@ -176,6 +189,18 @@ func handleAgentConn(conn net.Conn, token string) {
 			clipRelay.fromAgent(b64)
 		}
 	}
+}
+
+// matchAgentHandshake checks a handshake line against a prefix and (if set) the token.
+func matchAgentHandshake(line, prefix, token string) (rest string, ok bool) {
+	if !strings.HasPrefix(line, prefix) {
+		return "", false
+	}
+	provided := strings.TrimPrefix(line, prefix)
+	if token != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+		return "", false
+	}
+	return provided, true
 }
 
 func isLoopbackAddr(a net.Addr) bool {

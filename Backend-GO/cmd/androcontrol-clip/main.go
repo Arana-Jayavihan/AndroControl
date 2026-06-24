@@ -21,6 +21,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -29,25 +30,68 @@ import (
 // maxClipBytes caps the raw clipboard text we sync (must match the server).
 const maxClipBytes = 1 << 20
 
+func logf(format string, args ...interface{}) { log.Printf(format, args...) }
+
 func main() {
 	log.SetFlags(0)
+
+	// `androcontrol-clip send <file|dir>...` submits a file to the running agent.
+	if len(os.Args) > 1 && os.Args[1] == "send" {
+		os.Exit(runSendClient(os.Args[2:]))
+	}
+
 	host := envOr("ANDROCONTROL_CLIP_HOST", "127.0.0.1")
 	port := envOr("ANDROCONTROL_CLIP_PORT", "5051")
 	token := os.Getenv("ANDROCONTROL_CLIP_TOKEN")
 
-	cb, err := detectClipboard()
-	if err != nil {
-		log.Fatalf("androcontrol-clip: %v", err)
-	}
-	log.Printf("androcontrol-clip: clipboard backend = %s", cb.name)
+	started := false
 
-	addr := net.JoinHostPort(host, port)
-	for {
-		if err := run(addr, token, cb); err != nil {
-			log.Printf("androcontrol-clip: %v; retrying in 3s", err)
-		}
-		time.Sleep(3 * time.Second)
+	// Clipboard sync (only if a backend is present).
+	if cb, err := detectClipboard(); err == nil {
+		log.Printf("androcontrol-clip: clipboard backend = %s", cb.name)
+		addr := net.JoinHostPort(host, port)
+		go func() {
+			for {
+				if err := run(addr, token, cb); err != nil {
+					log.Printf("androcontrol-clip: clipboard: %v; retrying in 3s", err)
+				}
+				time.Sleep(3 * time.Second)
+			}
+		}()
+		started = true
+	} else {
+		log.Printf("androcontrol-clip: clipboard disabled (%v)", err)
 	}
+
+	// File transfer (opt-in via ANDROCONTROL_FILE_TRANSFER).
+	if fileTransferEnabled() {
+		recv := receiveDir()
+		log.Printf("androcontrol-clip: file transfer enabled, receiving to %s", recv)
+		go runTransferAgent(host, port, token, recv)
+		started = true
+	}
+
+	if !started {
+		log.Fatalf("androcontrol-clip: nothing to do " +
+			"(no clipboard backend, and ANDROCONTROL_FILE_TRANSFER not set)")
+	}
+	select {} // run until killed
+}
+
+func fileTransferEnabled() bool {
+	switch strings.ToLower(os.Getenv("ANDROCONTROL_FILE_TRANSFER")) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+func receiveDir() string {
+	if d := os.Getenv("ANDROCONTROL_RECEIVE_DIR"); d != "" {
+		return d
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "AndroControl", "received")
 }
 
 // run connects to the relay, performs the handshake, then bridges the clipboard until

@@ -25,6 +25,10 @@ const (
 	// Timeouts
 	AuthTimeoutDuration = 5 * time.Second
 	IdleTimeout         = 60 * time.Second
+	// While a file transfer is bridged, the control connection may legitimately go quiet
+	// (the phone's heartbeat can be delayed behind a big upload saturating the uplink),
+	// so tolerate a much longer idle period before closing it.
+	TransferIdleTimeout = 3 * time.Minute
 	HeartbeatCheck      = 30 * time.Second
 
 	// HandshakeTimeout bounds the TLS handshake. It is intentionally generous
@@ -66,6 +70,11 @@ var (
 	// between the device and a desktop session agent over loopback.
 	clipRelay   *ClipRelay
 	clipEnabled bool
+
+	// File transfer (optional, enabled by -data-port); bridges the phone's bulk data
+	// connection with the desktop agent's bulk loopback sub-channel.
+	dataEnabled      bool
+	dataTransferPort int
 )
 
 func init() {
@@ -761,6 +770,11 @@ func handleClient(conn net.Conn) {
 		defer clipRelay.clearDevice(dw)
 	}
 
+	// Tell the phone where to open its bulk file-transfer connection.
+	if dataEnabled {
+		dw.writeString(fmt.Sprintf("DATAPORT:%d\n", dataTransferPort))
+	}
+
 	// Audit-log the session lifecycle (the disconnect line records the duration).
 	deviceName := deviceManager.Name(deviceID)
 	connectedAt := time.Now()
@@ -774,7 +788,11 @@ func handleClient(conn net.Conn) {
 	defer activeConns.Remove(deviceID, conn)
 
 	for {
-		conn.SetReadDeadline(time.Now().Add(IdleTimeout))
+		idle := IdleTimeout
+		if dataEnabled && dataBridgeInst.isPiping() {
+			idle = TransferIdleTimeout // don't kill the control conn mid-transfer
+		}
+		conn.SetReadDeadline(time.Now().Add(idle))
 
 		if !scanner.Scan() {
 			err := scanner.Err()
@@ -959,6 +977,7 @@ func main() {
 	addr := flag.String("addr", HOST, "Bind address (e.g. 0.0.0.0 for all interfaces, 127.0.0.1 for loopback only)")
 	port := flag.Int("port", PORT, "TCP port to listen on")
 	clipPort := flag.Int("clip-port", 0, "Loopback port for the desktop clipboard agent (0 = clipboard sync disabled)")
+	dataPort := flag.Int("data-port", 0, "TLS port for the phone's bulk file-transfer connection (0 = file transfer disabled)")
 	dataDir := flag.String("data-dir", "", "Directory holding certs/, auth_token and devices.json (default: current directory)")
 	logLevel := flag.String("log-level", "info", "Log verbosity: debug, info, warn, error")
 	listDevices := flag.Bool("list-devices", false, "List paired devices and exit")
@@ -1084,6 +1103,14 @@ func main() {
 		clipRelay = NewClipRelay()
 		clipEnabled = true
 		go startClipListener("127.0.0.1", *clipPort, os.Getenv("ANDROCONTROL_CLIP_TOKEN"), shuttingDown)
+	}
+
+	// Optional file transfer: a dedicated TLS port for the phone's bulk data connection,
+	// bridged to the desktop agent's bulk loopback sub-channel (kept off the input stream).
+	if *dataPort > 0 {
+		dataEnabled = true
+		dataTransferPort = *dataPort
+		go startDataListener(*addr, *dataPort, tlsCfg, shuttingDown)
 	}
 
 	log.Println("════════════════════════════════════════════════════════════════════")

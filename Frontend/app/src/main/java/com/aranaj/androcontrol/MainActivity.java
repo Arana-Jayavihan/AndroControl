@@ -17,6 +17,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.text.format.Formatter;
 import android.util.Log;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -58,6 +59,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
@@ -70,7 +72,8 @@ import javax.net.ssl.SSLSocket;
 
 public class MainActivity extends AppCompatActivity implements
         HeartbeatManager.HeartbeatListener,
-        Protocol.ProtocolListener {
+        Protocol.ProtocolListener,
+        DataChannel.Listener {
 
     private View touchPad;
     private MaterialButton btnLeftClick, btnMiddleClick, btnRightClick;
@@ -116,9 +119,29 @@ public class MainActivity extends AppCompatActivity implements
     private ClipboardManager clipboardManager;
     private ClipboardManager.OnPrimaryClipChangedListener clipChangedListener;
     private BroadcastReceiver clipSendReceiver;
+    private BroadcastReceiver notifPersistReceiver;
     private volatile String lastClipText = "";
     private boolean clipboardSyncEnabled = false;
     private boolean isResumed = false;
+
+    // File transfer (opt-in). The data channel (bulk mTLS to the server's data port) is
+    // owned here; the share-target activity hands files back via a broadcast.
+    public static final String ACTION_FILE_ACCEPT = "com.aranaj.androcontrol.action.FILE_ACCEPT";
+    public static final String ACTION_FILE_REJECT = "com.aranaj.androcontrol.action.FILE_REJECT";
+    private static final String FILE_CHANNEL_ID = "androcontrol_files";
+    private static final int FILE_OFFER_NOTIF_ID = 1003;
+    private static final int FILE_PROGRESS_NOTIF_ID = 1004;
+    private long lastProgressNotifyMs = 0;
+    private DataChannel dataChannel;
+    private BroadcastReceiver fileSendReceiver;
+    private BroadcastReceiver fileOfferReceiver;
+    private boolean fileTransferEnabled = false;
+    private static volatile boolean fileTransferReady = false;
+
+    /** Whether the data channel is up (read by ShareReceiverActivity before sharing). */
+    public static boolean isFileTransferReady() {
+        return fileTransferReady;
+    }
 
     // Suppresses the "connection lost" toast when we deliberately closed the link (e.g. unpair).
     private volatile boolean suppressConnectionLostToast = false;
@@ -376,6 +399,55 @@ public class MainActivity extends AppCompatActivity implements
         ContextCompat.registerReceiver(this, clipSendReceiver,
                 new IntentFilter(ACTION_CLIP_SEND), ContextCompat.RECEIVER_NOT_EXPORTED);
         createClipboardChannel();
+
+        // Keep the ongoing connection notification present for the whole session: if the
+        // user swipes it away (allowed on Android 13+), re-post it while still connected.
+        notifPersistReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (socket != null && !socket.isClosed() && currentServer != null) {
+                    ConnectionService.start(MainActivity.this, currentServer.getName());
+                }
+            }
+        };
+        ContextCompat.registerReceiver(this, notifPersistReceiver,
+                new IntentFilter(ConnectionService.ACTION_NOTIFICATION_DISMISSED),
+                ContextCompat.RECEIVER_NOT_EXPORTED);
+
+        // File transfer: the share-target activity copies shared files to cache and
+        // broadcasts their paths here so the data channel can stream them.
+        fileSendReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (dataChannel == null) return;
+                java.util.ArrayList<String> paths = intent.getStringArrayListExtra(ShareReceiverActivity.EXTRA_PATHS);
+                java.util.ArrayList<String> names = intent.getStringArrayListExtra(ShareReceiverActivity.EXTRA_NAMES);
+                if (paths == null) return;
+                for (int i = 0; i < paths.size(); i++) {
+                    String nm = (names != null && i < names.size()) ? names.get(i) : new File(paths.get(i)).getName();
+                    dataChannel.enqueueSend(new File(paths.get(i)), nm);
+                }
+            }
+        };
+        ContextCompat.registerReceiver(this, fileSendReceiver,
+                new IntentFilter(ShareReceiverActivity.ACTION_FILE_SEND), ContextCompat.RECEIVER_NOT_EXPORTED);
+
+        // Accept/Reject actions from an incoming-file notification.
+        fileOfferReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (dataChannel == null) return;
+                int id = intent.getIntExtra("id", -1);
+                dataChannel.respondToOffer(id, ACTION_FILE_ACCEPT.equals(intent.getAction()));
+                NotificationManagerCompat.from(MainActivity.this).cancel(FILE_OFFER_NOTIF_ID);
+            }
+        };
+        IntentFilter offerFilter = new IntentFilter();
+        offerFilter.addAction(ACTION_FILE_ACCEPT);
+        offerFilter.addAction(ACTION_FILE_REJECT);
+        ContextCompat.registerReceiver(this, fileOfferReceiver, offerFilter, ContextCompat.RECEIVER_NOT_EXPORTED);
+
+        createFileChannel();
 
         // Ask for notification permission so the ongoing-connection notification is visible (Android 13+).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
@@ -1220,6 +1292,12 @@ public class MainActivity extends AppCompatActivity implements
 
             heartbeatManager.stop();
 
+            fileTransferReady = false;
+            if (dataChannel != null) {
+                dataChannel.close();
+                dataChannel = null;
+            }
+
             if (socket != null && !socket.isClosed()) {
                 socket.close();
             }
@@ -1793,6 +1871,129 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     @Override
+    public void onDataPort(int port) {
+        if (!fileTransferEnabled || tlsHelper == null || serverIp.isEmpty()) return;
+        // Always replace any prior data channel — a stale one (e.g. from a previous
+        // connection/host) must not linger and serve transfers over a dead path.
+        if (dataChannel != null) {
+            dataChannel.close();
+            dataChannel = null;
+            fileTransferReady = false;
+        }
+        final int p = port;
+        final String host = serverIp;
+        executorService.execute(() -> {
+            DataChannel dc = new DataChannel(this, tlsHelper, this);
+            dc.connect(host, p);
+            dataChannel = dc;
+            fileTransferReady = dc.isConnected();
+        });
+    }
+
+    // ---- DataChannel.Listener (callbacks arrive on the data-channel threads) ----
+    @Override
+    public void onIncomingOffer(int id, String name, long size) {
+        Intent accept = new Intent(ACTION_FILE_ACCEPT).setPackage(getPackageName()).putExtra("id", id);
+        Intent reject = new Intent(ACTION_FILE_REJECT).setPackage(getPackageName()).putExtra("id", id);
+        PendingIntent ap = PendingIntent.getBroadcast(this, id * 2, accept,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent rp = PendingIntent.getBroadcast(this, id * 2 + 1, reject,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification n = new NotificationCompat.Builder(this, FILE_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
+                .setContentTitle(getString(R.string.file_offer_title))
+                .setContentText(getString(R.string.file_offer_text, name, Formatter.formatShortFileSize(this, size)))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .addAction(0, getString(R.string.file_accept), ap)
+                .addAction(0, getString(R.string.file_reject), rp)
+                .build();
+        try {
+            NotificationManagerCompat.from(this).notify(FILE_OFFER_NOTIF_ID, n);
+        } catch (SecurityException ignored) {
+        }
+    }
+
+    @Override
+    public void onReceived(String name) {
+        heartbeatManager.setTransferActive(false);
+        notifyFile(getString(R.string.file_received, name));
+    }
+
+    @Override
+    public void onSent(String name) {
+        heartbeatManager.setTransferActive(false);
+        notifyFile(getString(R.string.file_sent, name));
+    }
+
+    @Override
+    public void onTransferError(String message) {
+        heartbeatManager.setTransferActive(false);
+        notifyFile(getString(R.string.file_error, message));
+    }
+
+    @Override
+    public void onProgress(int id, String name, long done, long total, boolean sending) {
+        // A transfer in flight proves the connection is alive — feed it to the heartbeat
+        // so a long transfer can't starve the control PING and drop the session.
+        heartbeatManager.onActivity();
+        boolean finished = done >= total;
+        // While transferring, extend the heartbeat's stall grace so a brief Wi-Fi stall
+        // mid-transfer doesn't drop the whole session.
+        heartbeatManager.setTransferActive(!finished);
+
+        long now = System.currentTimeMillis();
+        if (!finished && now - lastProgressNotifyMs < 250) return; // throttle UI updates
+        lastProgressNotifyMs = now;
+
+        if (finished) {
+            try {
+                NotificationManagerCompat.from(this).cancel(FILE_PROGRESS_NOTIF_ID);
+            } catch (Exception ignored) {
+            }
+            return;
+        }
+        int pct = total > 0 ? (int) (done * 100 / total) : 0;
+        String title = getString(sending ? R.string.file_sending : R.string.file_receiving, name);
+        Notification n = new NotificationCompat.Builder(this, FILE_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
+                .setContentTitle(title)
+                .setProgress(100, pct, false)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build();
+        try {
+            NotificationManagerCompat.from(this).notify(FILE_PROGRESS_NOTIF_ID, n);
+        } catch (SecurityException ignored) {
+        }
+    }
+
+    private void notifyFile(String text) {
+        Notification n = new NotificationCompat.Builder(this, FILE_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
+                .setContentTitle(getString(R.string.app_name))
+                .setContentText(text)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setAutoCancel(true)
+                .build();
+        try {
+            NotificationManagerCompat.from(this).notify((int) (System.currentTimeMillis() & 0xfffffff), n);
+        } catch (SecurityException ignored) {
+        }
+    }
+
+    private void createFileChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            if (nm != null && nm.getNotificationChannel(FILE_CHANNEL_ID) == null) {
+                NotificationChannel ch = new NotificationChannel(FILE_CHANNEL_ID,
+                        getString(R.string.file_channel_name), NotificationManager.IMPORTANCE_HIGH);
+                nm.createNotificationChannel(ch);
+            }
+        }
+    }
+
+    @Override
     public void onClipboardReceived(String text) {
         if (!clipboardSyncEnabled || text == null || text.isEmpty()) return;
         if (isResumed) {
@@ -1881,6 +2082,7 @@ public class MainActivity extends AppCompatActivity implements
             clipboardManager.addPrimaryClipChangedListener(clipChangedListener);
             onLocalClipboardChanged();
         }
+        fileTransferEnabled = settingsManager.isFileTransferEnabled();
         // Skip auto-reconnect when returning from an in-app screen (QR scanner /
         // Settings); only reconnect when genuinely returning from the background.
         if (suppressResumeReconnect) {
@@ -2045,6 +2247,36 @@ public class MainActivity extends AppCompatActivity implements
             }
             clipSendReceiver = null;
         }
+
+        if (notifPersistReceiver != null) {
+            try {
+                unregisterReceiver(notifPersistReceiver);
+            } catch (Exception ignored) {
+            }
+            notifPersistReceiver = null;
+        }
+
+        if (fileSendReceiver != null) {
+            try {
+                unregisterReceiver(fileSendReceiver);
+            } catch (Exception ignored) {
+            }
+            fileSendReceiver = null;
+        }
+
+        if (fileOfferReceiver != null) {
+            try {
+                unregisterReceiver(fileOfferReceiver);
+            } catch (Exception ignored) {
+            }
+            fileOfferReceiver = null;
+        }
+
+        if (dataChannel != null) {
+            dataChannel.close();
+            dataChannel = null;
+        }
+        fileTransferReady = false;
 
         synchronized (connectionLock) {
             isConnecting = false;

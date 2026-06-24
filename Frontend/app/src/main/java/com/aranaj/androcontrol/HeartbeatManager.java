@@ -30,6 +30,11 @@ public class HeartbeatManager {
     // activity counts as liveness — a congested-but-alive link drops samples, not the
     // connection.
     private final AtomicLong lastActivityTime;
+    // While a file transfer is in flight, tolerate a much longer stall before declaring
+    // the link dead (a big transfer can briefly stall the shared Wi-Fi link). Cleared
+    // when the transfer ends.
+    private final AtomicBoolean transferActive = new AtomicBoolean(false);
+    private static final long TRANSFER_GRACE_MS = 120_000;
 
     private PrintWriter writer;
     private HeartbeatListener listener;
@@ -54,6 +59,11 @@ public class HeartbeatManager {
      */
     public void onActivity() {
         lastActivityTime.set(System.currentTimeMillis());
+    }
+
+    /** Marks whether a file transfer is in flight (extends the stall grace window). */
+    public void setTransferActive(boolean active) {
+        transferActive.set(active);
     }
 
     /**
@@ -106,7 +116,10 @@ public class HeartbeatManager {
                         // at all has flowed for the window.
                         long lastAlive = Math.max(lastPongTime.get(), lastActivityTime.get());
                         long timeSinceAlive = System.currentTimeMillis() - lastAlive;
-                        if (timeSinceAlive > HEARTBEAT_INTERVAL_MS + PONG_TIMEOUT_MS) {
+                        long window = transferActive.get()
+                                ? TRANSFER_GRACE_MS
+                                : HEARTBEAT_INTERVAL_MS + PONG_TIMEOUT_MS;
+                        if (timeSinceAlive > window) {
                             Log.w(TAG, "Heartbeat timeout - no activity received");
                             notifyTimeout();
                         }

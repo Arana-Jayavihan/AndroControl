@@ -62,6 +62,27 @@
             android:taskAffinity=""
             android:launchMode="singleInstance" />
 
+        <!-- Share-sheet target: "Send via AndroControl" -->
+        <activity
+            android:name=".ShareReceiverActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.AndroControl.Transparent"
+            android:label="@string/share_label">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
         <!-- Keeps the connection alive while backgrounded -->
         <service
             android:name=".ConnectionService"

@@ -48,6 +48,9 @@ public class Protocol {
 
         /** A clipboard update arrived from the desktop. Delivered on the main thread. */
         void onClipboardReceived(String text);
+
+        /** The server advertised its bulk file-transfer port. Delivered on the main thread. */
+        void onDataPort(int port);
     }
 
     public Protocol() {
@@ -381,6 +384,15 @@ public class Protocol {
                 mainHandler.post(() -> listener.onClipboardReceived(text));
             } catch (IllegalArgumentException e) {
                 Log.w(TAG, "Ignoring malformed CLIP payload");
+            }
+            return;
+        }
+        if (response.startsWith("DATAPORT:")) {
+            if (listener == null) return;
+            try {
+                final int p = Integer.parseInt(response.substring("DATAPORT:".length()).trim());
+                mainHandler.post(() -> listener.onDataPort(p));
+            } catch (NumberFormatException ignored) {
             }
             return;
         }

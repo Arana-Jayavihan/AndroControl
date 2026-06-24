@@ -15,7 +15,7 @@
         packages = {
           androcontrol = pkgs.buildGoModule {
             pname = "androcontrol";
-            version = "1.1.0";
+            version = "1.1.1";
 
             src = ./Backend-GO;
 
@@ -188,7 +188,19 @@
               clipPort = lib.mkOption {
                 type = lib.types.port;
                 default = 5051;
-                description = "Loopback port for the clipboard relay (used only when clipboardSync is enabled)";
+                description = "Loopback port for the clipboard/agent relay (used when clipboardSync or fileTransfer is enabled)";
+              };
+
+              fileTransfer = lib.mkEnableOption ''
+                file transfer with the paired phone (≤5 MB per file). Opens a dedicated
+                TLS data port and gives the per-user agent its file send/receive role —
+                Android→desktop via the share sheet, desktop→Android via
+                `androcontrol-clip send`. Needs zenity/kdialog for the accept prompt'';
+
+              dataPort = lib.mkOption {
+                type = lib.types.port;
+                default = 5052;
+                description = "TLS port for the bulk file-transfer connection (used only when fileTransfer is enabled)";
               };
             };
 
@@ -224,7 +236,10 @@
                   Group = cfg.group;
                   WorkingDirectory = cfg.dataDir;
                   ExecStart = "${cfg.package}/bin/AndroControl -addr ${cfg.bindAddress} -port ${toString cfg.port}"
-                    + lib.optionalString cfg.clipboardSync " -clip-port ${toString cfg.clipPort}";
+                    # The agent's loopback control plane (clipboard + file-transfer bulk
+                    # sub-channel) lives on the clip port, so enable it for either feature.
+                    + lib.optionalString (cfg.clipboardSync || cfg.fileTransfer) " -clip-port ${toString cfg.clipPort}"
+                    + lib.optionalString cfg.fileTransfer " -data-port ${toString cfg.dataPort}";
                   # `systemctl reload androcontrol` re-reads devices.json so external
                   # revoke/cleanup changes apply without a full restart.
                   ExecReload = "${pkgs.coreutils}/bin/kill -HUP $MAINPID";
@@ -287,16 +302,21 @@
                 '';
               };
 
-              # Per-user clipboard sync agent: bridges the session clipboard with the
-              # server's loopback relay (the sandboxed server can't reach the display
-              # server itself). Uses wl-clipboard on Wayland or xclip on X11.
-              systemd.user.services.androcontrol-clip = lib.mkIf cfg.clipboardSync {
-                description = "AndroControl clipboard sync agent";
+              # Per-user agent: bridges the session clipboard and handles file transfers
+              # with the phone (the sandboxed server can't reach the display server or
+              # write to the user's home). Runs if either feature is enabled.
+              systemd.user.services.androcontrol-clip = lib.mkIf (cfg.clipboardSync || cfg.fileTransfer) {
+                description = "AndroControl clipboard/file-transfer agent";
                 wantedBy = [ "graphical-session.target" ];
                 partOf = [ "graphical-session.target" ];
                 after = [ "graphical-session.target" ];
-                path = [ pkgs.wl-clipboard pkgs.xclip ];
-                environment.ANDROCONTROL_CLIP_PORT = toString cfg.clipPort;
+                path = [ pkgs.wl-clipboard pkgs.xclip ]
+                  ++ lib.optionals cfg.fileTransfer [ pkgs.zenity ];
+                environment = {
+                  ANDROCONTROL_CLIP_PORT = toString cfg.clipPort;
+                } // lib.optionalAttrs cfg.fileTransfer {
+                  ANDROCONTROL_FILE_TRANSFER = "1";
+                };
                 serviceConfig = {
                   ExecStart = "${cfg.package}/bin/androcontrol-clip";
                   Restart = "always";
@@ -304,7 +324,8 @@
                 };
               };
 
-              networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];
+              networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall
+                ([ cfg.port ] ++ lib.optionals cfg.fileTransfer [ cfg.dataPort ]);
             };
           };
 

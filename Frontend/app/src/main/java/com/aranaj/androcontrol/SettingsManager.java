@@ -209,4 +209,17 @@ public class SettingsManager {
     public void setClipboardSyncEnabled(boolean enabled) {
         prefs.edit().putBoolean(KEY_CLIPBOARD_SYNC, enabled).apply();
     }
+
+    // ---------------- File transfer ----------------
+
+    private static final String KEY_FILE_TRANSFER = "file_transfer";
+
+    /** @return true if file send/receive with the desktop is enabled. */
+    public boolean isFileTransferEnabled() {
+        return prefs.getBoolean(KEY_FILE_TRANSFER, false);
+    }
+
+    public void setFileTransferEnabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_FILE_TRANSFER, enabled).apply();
+    }
 }

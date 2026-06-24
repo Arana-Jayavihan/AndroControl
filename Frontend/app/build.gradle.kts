@@ -10,8 +10,8 @@ android {
         applicationId = "com.aranaj.androcontrol"
         minSdk = 23  // Requires Android 6.0+ for secure storage (AES-GCM via Android Keystore)
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.1.0"
+        versionCode = 7
+        versionName = "1.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

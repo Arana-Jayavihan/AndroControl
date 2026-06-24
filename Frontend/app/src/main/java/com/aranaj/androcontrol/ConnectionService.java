@@ -34,6 +34,10 @@ public class ConnectionService extends Service {
     public static final String ACTION_START = "com.aranaj.androcontrol.action.START_CONNECTION";
     public static final String ACTION_STOP = "com.aranaj.androcontrol.action.STOP_CONNECTION";
     public static final String ACTION_DISCONNECT_REQUEST = "com.aranaj.androcontrol.action.DISCONNECT_REQUEST";
+    // Fired (as the notification's delete-intent) when the user swipes the ongoing
+    // notification away. MainActivity re-posts it while the connection is still alive,
+    // so it persists for the session (Android 13+ otherwise allows swipe-dismiss).
+    public static final String ACTION_NOTIFICATION_DISMISSED = "com.aranaj.androcontrol.action.NOTIFICATION_DISMISSED";
     public static final String EXTRA_SERVER_NAME = "server_name";
 
     private PowerManager.WakeLock wakeLock;
@@ -111,6 +115,12 @@ public class ConnectionService extends Service {
         PendingIntent disconnectPi = PendingIntent.getBroadcast(this, 1, disconnectIntent,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
+        // Delete-intent: if the user dismisses the notification, MainActivity re-posts it
+        // while still connected so it stays put for the whole session.
+        Intent dismissIntent = new Intent(ACTION_NOTIFICATION_DISMISSED).setPackage(getPackageName());
+        PendingIntent dismissPi = PendingIntent.getBroadcast(this, 4, dismissIntent,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+
         NotificationCompat.Builder b = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(getString(R.string.notif_connected_title))
                 .setContentText(getString(R.string.notif_connected_text, serverName))
@@ -120,6 +130,7 @@ public class ConnectionService extends Service {
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setContentIntent(openPi)
+                .setDeleteIntent(dismissPi)
                 .addAction(0, getString(R.string.notif_disconnect), disconnectPi);
 
         // Clipboard sync: one-tap "Send clipboard" — the transparent trampoline reads

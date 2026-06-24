@@ -201,6 +201,31 @@ Text only, 1 MB cap, and clipboard contents are never logged. The loopback relay
 loopback-only; set a shared `ANDROCONTROL_CLIP_TOKEN` on both server and agent to also
 guard against other local users.
 
+### File transfer
+Send files between the phone and the desktop while connected (opt-in: **Settings → File
+transfer**), **up to 5 MB per file**.
+
+- **Android → desktop:** in any app, **Share → "Send via AndroControl"**. The file lands
+  in the desktop's `~/AndroControl/received/`.
+- **Desktop → Android:** `androcontrol-clip send <file…>` (or a file-manager action — see
+  [`deploy/thunar-send-action.md`](Backend-GO/deploy/thunar-send-action.md)). The file is
+  saved to `Downloads/AndroControl/` on the phone.
+
+The receiving side confirms each transfer before it's written (a notification on the
+phone, a `zenity`/`kdialog` dialog on the desktop); folders and multi-file shares are
+zipped automatically. Files travel on a **dedicated mTLS data port** (separate from the
+input/control stream) and are rate-paced so a transfer doesn't lag the cursor.
+
+- **NixOS:** set `services.androcontrol.fileTransfer = true;` (opens the data port and
+  enables the agent's transfer role).
+- **Any systemd distro:** start the server with `-data-port 5052` (open that port in your
+  firewall), and run the agent with `ANDROCONTROL_FILE_TRANSFER=1` (needs `wl-clipboard`/
+  `xclip` for clipboard and `zenity`/`kdialog` for the accept prompt). Desktop→phone send
+  requires an active connection (the server can't dial the phone).
+
+> The 5 MB cap is a deliberate limit: larger transfers over flaky Wi-Fi can stall, and
+> resumable transfers aren't implemented yet.
+
 ## Usage
 
 ### Mouse Controls
@@ -350,6 +375,7 @@ services.androcontrol = {
   # bindAddress = "127.0.0.1";    # loopback only (reach via VPN/SSH tunnel)
   desktopNotifications = true;    # per-user notify-send popups on connect/disconnect
   clipboardSync = true;          # bidirectional clipboard sync (per-user agent)
+  fileTransfer = true;           # file transfer (≤5 MB), opens the data port
 };
 ```
 

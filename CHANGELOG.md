@@ -6,6 +6,25 @@ tracked separately as `ProtocolVersion` in `Backend-GO/protocol.go` (currently *
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-06-24
+
+### Added
+- **File transfer** with the desktop (opt-in: Settings → File transfer), **up to 5 MB per
+  file**.
+  - **Android → desktop:** share a file ("Send via AndroControl") → saved to the
+    desktop's `~/AndroControl/received/`.
+  - **Desktop → Android:** `androcontrol-clip send <file…>` (or a Thunar right-click
+    action) → saved to `Downloads/AndroControl/` on the phone.
+  - Each transfer is confirmed on the receiving side; folders/multi-selections are zipped
+    on the fly. Carried on a dedicated mTLS data port (`-data-port`), kept off the
+    input/control stream and paced to leave the link headroom. Larger files await
+    resumable transfers; for now they're capped at 5 MB for reliability.
+
+### Changed
+- The ongoing connection notification now persists for the whole session: if it's
+  dismissed (Android 13+ lets users swipe away foreground-service notifications), it is
+  re-posted while the connection is still active.
+
 ## [1.1.0] - 2026-06-24
 
 ### Added

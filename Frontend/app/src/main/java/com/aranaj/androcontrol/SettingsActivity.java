@@ -65,6 +65,7 @@ public class SettingsActivity extends AppCompatActivity {
         setupHapticControls();
         setupPerformanceControls();
         setupClipboardControls();
+        setupFileTransferControls();
         setupDeviceInfo();
         refreshPreview();
     }
@@ -210,6 +211,15 @@ public class SettingsActivity extends AppCompatActivity {
         group.addOnButtonCheckedListener((g, checkedId, isChecked) -> {
             if (!isChecked) return;
             settings.setClipboardSyncEnabled(checkedId == R.id.clipboardOn);
+        });
+    }
+
+    private void setupFileTransferControls() {
+        MaterialButtonToggleGroup group = findViewById(R.id.fileTransferGroup);
+        group.check(settings.isFileTransferEnabled() ? R.id.fileTransferOn : R.id.fileTransferOff);
+        group.addOnButtonCheckedListener((g, checkedId, isChecked) -> {
+            if (!isChecked) return;
+            settings.setFileTransferEnabled(checkedId == R.id.fileTransferOn);
         });
     }
 
