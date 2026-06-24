@@ -1,6 +1,6 @@
 # AndroControl
 
-AndroControl is a secure remote control application that allows you to control your Linux system's mouse and keyboard from your Android smartphone.
+AndroControl is a secure remote control application that allows you to control your Linux system's mouse and keyboard from your Android smartphone
 
 <p align="center">
   <img src="Assets/Screenshot_20260620-213220.png" width="240" alt="AndroControl touchpad screen">
