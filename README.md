@@ -207,7 +207,8 @@ transfer**), **up to 5 MB per file**.
 
 - **Android → desktop:** in any app, **Share → "Send via AndroControl"**. The file lands
   in the desktop's `~/AndroControl/received/`.
-- **Desktop → Android:** `androcontrol-clip send <file…>` (or a file-manager action — see
+- **Desktop → Android:** `androcontrol-ctl send <file…>` (NixOS) — or, running the binary
+  directly, `androcontrol-clip send <file…>` — or a file-manager action (see
   [`deploy/thunar-send-action.md`](Backend-GO/deploy/thunar-send-action.md)). The file is
   saved to `Downloads/AndroControl/` on the phone.
 

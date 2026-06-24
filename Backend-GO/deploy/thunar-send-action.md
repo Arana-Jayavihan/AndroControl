@@ -8,7 +8,8 @@ multi-selections are zipped automatically. Requires an active phone connection.
 Edit → Configure custom actions… → ➕, then:
 
 - **Name:** `Send to phone (AndroControl)`
-- **Command:** `androcontrol-clip send %F`
+- **Command:** `androcontrol-ctl send %F`  (NixOS) — or `androcontrol-clip send %F` if you
+  run the binary directly
 - **Appearance Conditions → File Pattern:** `*`
 - Tick **Directories** and all file types.
 
@@ -22,7 +23,7 @@ then restart Thunar (`thunar -q`):
 	<icon>phone</icon>
 	<name>Send to phone (AndroControl)</name>
 	<unique-id>androcontrol-send-1</unique-id>
-	<command>androcontrol-clip send %F</command>
+	<command>androcontrol-ctl send %F</command>
 	<description>Send to the paired phone via AndroControl</description>
 	<patterns>*</patterns>
 	<directories/>

@@ -13,7 +13,7 @@ tracked separately as `ProtocolVersion` in `Backend-GO/protocol.go` (currently *
   file**.
   - **Android → desktop:** share a file ("Send via AndroControl") → saved to the
     desktop's `~/AndroControl/received/`.
-  - **Desktop → Android:** `androcontrol-clip send <file…>` (or a Thunar right-click
+  - **Desktop → Android:** `androcontrol-ctl send <file…>` (or a Thunar right-click
     action) → saved to `Downloads/AndroControl/` on the phone.
   - Each transfer is confirmed on the receiving side; folders/multi-selections are zipped
     on the fly. Carried on a dedicated mTLS data port (`-data-port`), kept off the

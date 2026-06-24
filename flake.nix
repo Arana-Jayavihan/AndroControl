@@ -68,6 +68,14 @@
               SVCUSER=${cfg.user}
               RUNUSER=${pkgs.util-linux}/bin/runuser
               SYSTEMCTL=${pkgs.systemd}/bin/systemctl
+              CLIP=${cfg.package}/bin/androcontrol-clip
+
+              # `send` hands a file to the per-user agent over its session socket, so it
+              # must run as the invoking user — handle it before elevating to root.
+              if [ "''${1:-}" = "send" ]; then
+                shift
+                exec "$CLIP" send "$@"
+              fi
 
               # Re-run with privileges if not already root.
               if [ "$(id -u)" -ne 0 ]; then
@@ -117,7 +125,7 @@
                   reload
                   ;;
                 *)
-                  echo "usage: androcontrol-ctl {qr | regen-token | list | revoke <id|name> | revoke-all | cleanup | rename <id> <name> | prune-inactive <days>}" >&2
+                  echo "usage: androcontrol-ctl {qr | regen-token | list | revoke <id|name> | revoke-all | cleanup | rename <id> <name> | prune-inactive <days> | send <file...>}" >&2
                   exit 1
                   ;;
               esac
