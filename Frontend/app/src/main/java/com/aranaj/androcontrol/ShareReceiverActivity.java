@@ -76,8 +76,9 @@ public class ShareReceiverActivity extends AppCompatActivity {
                 sendBroadcast(i);
             }
             if (skipped > 0) {
+                final int sk = skipped;
                 runOnUiThread(() -> Toast.makeText(this,
-                        getString(R.string.share_too_large, skipped), Toast.LENGTH_LONG).show());
+                        getString(R.string.share_too_large, sk), Toast.LENGTH_LONG).show());
             }
         }, "ShareCopy").start();
 
